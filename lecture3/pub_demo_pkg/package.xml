@@ -1,14 +1,10 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>node_demo_pkg</name>
-  <version>2.12.2024</version>
+  <name>pub_demo_pkg</name>
+<version>2.12.2024</version>
   <description>
-    The node_demo_pkg package is designed as an introductory guide to developing ROS nodes and
-    understanding core ROS concepts such as spinning, timers, publishers, and subscribers. This
-    package provides a step-by-step demonstration of how to create a ROS 2 node, implement
-    timer-based callbacks, publish messages to a topic, and subscribe to messages from a topic using
-    rclcpp and rclpy.
+    The pub_demo_pkg package illustrates how to publish data at a specific rate.
   </description>
   <maintainer email="zeidk@umd.edu">zeid kootbally</maintainer>
   <license>GPL-3.0</license>
@@ -18,6 +14,7 @@
 
   <depend>rclcpp</depend>
   <depend>rclpy</depend>
+  <depend>std_msgs</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
