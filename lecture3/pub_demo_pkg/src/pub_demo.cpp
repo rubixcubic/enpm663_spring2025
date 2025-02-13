@@ -11,12 +11,12 @@
 #include "pub_demo_pkg/pub_demo_interface.hpp"
 
 //=====================================
-void PubDemoInterface::publish_message() {
-  // Initialize the message
-  std_msgs::msg::String string_msg = std_msgs::msg::String();
-  string_msg.data = "Help me Obi-Wan Kenobi, you are my only hope";
-  RCLCPP_INFO_STREAM(this->get_logger(), "Publishing: " << string_msg.data);
-  publisher_->publish(string_msg);
+void PubDemoInterface::leia_timer_cb()
+{
+  // Set the message
+  leia_topic_msg_.data = "Help me Obi-Wan Kenobi, you are my only hope";
+  RCLCPP_INFO_STREAM(this->get_logger(), "Publishing: " << leia_topic_msg_.data);
+  leia_pub_->publish(leia_topic_msg_);
 }
 
 /**
@@ -30,10 +30,11 @@ void PubDemoInterface::publish_message() {
  * @param argv Array of command-line arguments.
  * @return int Execution status code.
  */
-int main(int argc, char *argv[]) {
-  rclcpp::init(argc, argv);  ///< Initialize ROS 2.
+int main(int argc, char *argv[])
+{
+  rclcpp::init(argc, argv); ///< Initialize ROS 2.
   auto node = std::make_shared<PubDemoInterface>(
-      "pub_demo_cpp");           ///< Create an instance of PubDemoInterface.
+      "pub_demo_cpp"); ///< Create an instance of PubDemoInterface.
   rclcpp::spin(node);  ///< Enter a loop, pumping callbacks.
-  rclcpp::shutdown();            ///< Shutdown ROS 2.
+  rclcpp::shutdown();  ///< Shutdown communications and clean up
 }

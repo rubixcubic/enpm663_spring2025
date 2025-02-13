@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>pub_demo_pkg</name>
+  <name>sub_demo_pkg</name>
   <version>2.12.2024</version>
-  <description> The pub_demo_pkg package illustrates how to publish data at a specific rate. </description>
+  <description> The sub_demo_pkg package illustrates how to subscribe to a topic. </description>
   <maintainer email="zeidk@umd.edu">zeid kootbally</maintainer>
   <license>GPL-3.0</license>
 

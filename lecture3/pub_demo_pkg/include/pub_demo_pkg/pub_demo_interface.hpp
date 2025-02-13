@@ -19,8 +19,9 @@
  *
  * PublisherNode is a ROS2 node that periodically publishes string messages.
  */
-class PubDemoInterface : public rclcpp::Node {
- public:
+class PubDemoInterface : public rclcpp::Node
+{
+public:
   /**
    * @brief Constructs a PubDemoInterface with a given name.
    *
@@ -28,26 +29,28 @@ class PubDemoInterface : public rclcpp::Node {
    * Initializes the publisher, timer, and sets up the timer callback for
    * publishing messages.
    */
-  PubDemoInterface(std::string node_name) : Node(node_name) {
+  PubDemoInterface(std::string node_name) : Node(node_name)
+  {
+    leia_topic_msg_ = std_msgs::msg::String();
 
     // Setup a timer to call timer_callback every 500 milliseconds
-    timer_ = this->create_wall_timer(
+    leia_timer_ = this->create_wall_timer(
         std::chrono::milliseconds((int)(500.0)),
-        std::bind(&PubDemoInterface::publish_message, this));
+        std::bind(&PubDemoInterface::leia_timer_cb, this));
 
     // Initialize the publisher on topic "leia" with a queue size of 10
-    publisher_ = this->create_publisher<std_msgs::msg::String>("leia", 10);
+    leia_pub_ = this->create_publisher<std_msgs::msg::String>("leia", 10);
   }
 
- private:
-  rclcpp::TimerBase::SharedPtr timer_;  ///< Timer to trigger publishing.
+private:
+  rclcpp::TimerBase::SharedPtr leia_timer_; ///< Timer to trigger publishing.
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr
-      publisher_;  ///< The publisher object.
-
+      leia_pub_; ///< The publisher object.
+  std_msgs::msg::String leia_topic_msg_;
   /**
    * @brief Timer callback function that publishes a message.
    *
    * This function constructs a message and publishes the message.
    */
-  void publish_message();
+  void leia_timer_cb();
 };

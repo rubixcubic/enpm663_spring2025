@@ -26,13 +26,13 @@ class PubDemoInterface(Node):
         """
         super().__init__(node_name)
         # Create a publisher object for the 'leia' topic with a queue size of 10.
-        self._publisher = self.create_publisher(String, "leia", 10)
-        # Create a timer that calls `publish_message` every second.
-        self._timer = self.create_timer(0.5, self.publish_message)
+        self._leia_pub = self.create_publisher(String, "leia", 10)
+        # Create a timer that calls `leia_timer_cb` every second.
+        self._leia_timer = self.create_timer(0.5, self.leia_timer_cb)
         
         self._string_msg = String()
 
-    def publish_message(self):
+    def leia_timer_cb(self):
         """
         Callback function for the timer event. This function constructs the message to be published,
         and logs the message to the ROS2 logger.
@@ -43,6 +43,6 @@ class PubDemoInterface(Node):
         # Set the message data.
         self._string_msg.data = "Help me Obi-Wan Kenobi, you are my only hope"
         # Publish the message.
-        self._publisher.publish(self._string_msg)
+        self._leia_pub.publish(self._string_msg)
         # Log the message being published.
         self.get_logger().info(f"Publishing: {self._string_msg.data}")
