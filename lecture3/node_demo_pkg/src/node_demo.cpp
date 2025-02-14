@@ -27,5 +27,4 @@ int main(int argc, char* argv[]) {
     // rclcpp::spin(node);  ///< Uncomment to keep the node running.
 
     rclcpp::shutdown();
-    return 0;
 }

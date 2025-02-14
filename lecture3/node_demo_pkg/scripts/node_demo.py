@@ -38,7 +38,11 @@ def main(args=None):
     #     rclpy.spin(node)  # Keeps the node running
     # except Exception as e:
     #     rclpy.logging.get_logger("node_demo_py").error(f"Error initializing node: {e}")
+    # except KeyboardInterrupt:
+    #     # Log a message when the node is manually terminated
+    #     node.get_logger().warn("Keyboard interrupt detected")
     # finally:
+    #     node.get_logger().warn("Exited spin()")
     #     rclpy.shutdown()
 
 if __name__ == "__main__":

@@ -1,0 +1,19 @@
+av_sensors_py:  # Name of your Node
+  ros__parameters:
+    camera_name: 'front_camera'
+    lidar_name: 'roof_lidar'
+    radar_name: 'front_bumper_radar'
+    camera_rate: 20
+    lidar_rate: 30
+    radar_rate: 60
+
+# av_sensors_cpp:  # Name of your Node
+#   ros__parameters:
+#     camera_name: 'front_camera'
+#     lidar_name: 'roof_lidar'
+#     radar_name: 'front_bumper_radar'
+#     camera_rate: 20
+#     lidar_rate: 30
+#     radar_rate: 60
+
+  
