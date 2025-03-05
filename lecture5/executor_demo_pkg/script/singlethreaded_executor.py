@@ -13,8 +13,10 @@ from executor_demo_pkg.executor_demo_interface import SingleThreadedExecutorInte
 #     """
 #     rclpy.init(args=args)
 #     node = SingleThreadedExecutorInterface("single_threaded_executor_demo")
+#     # node2 = SingleThreadedExecutorInterface("single_threaded_executor_demo2")
 #     try:
 #         rclpy.spin(node)
+
 #     except KeyboardInterrupt:
 #         # Log a message when the node is manually terminated
 #         node.get_logger().warn("Keyboard interrupt detected")
@@ -34,9 +36,11 @@ def main(args=None):
         args (list, optional): Command-line arguments passed to the node. Defaults to None.
     """
     rclpy.init(args=args)
-    node = SingleThreadedExecutorInterface("single_threaded_executor_demo")
+    node1 = SingleThreadedExecutorInterface("single_threaded_executor_demo")
+    node2 = SingleThreadedExecutorInterface("single_threaded_executor_demo")
     executor = SingleThreadedExecutor()  # Explicit executor
-    executor.add_node(node)
+    executor.add_node(node1)
+    executor.add_node(node2)
     try:
         executor.spin()
     except KeyboardInterrupt:
