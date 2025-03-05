@@ -15,6 +15,8 @@ class SingleThreadedExecutorInterface(Node):
     """
     def __init__(self, node_name):
         super().__init__(node_name)
+        
+        self._test = 0
 
         # Timer1
         self._timer1 = self.create_timer(1, self.timer1_callback)
@@ -32,12 +34,14 @@ class SingleThreadedExecutorInterface(Node):
         Callback function for timer1
         """
         self.get_logger().info(Color.YELLOW + "Timer1 callback" + Color.RESET)
+        self._test = 1
 
     def timer2_callback(self):
         """
         Callback function for timer2
         """
         self.get_logger().info(Color.BLUE + "Timer2 callback" + Color.RESET)
+        self._test += 2
         # while True:
         #     pass
 
@@ -86,8 +90,8 @@ class DualMutuallyExclusiveInterface(Node):
         Callback function for timer2
         """
         self.get_logger().info(Color.BLUE + "Timer2 callback" + Color.RESET)
-        # while True:
-        #     pass
+        while True:
+            pass
 
     def timer3_callback(self):
         """
@@ -181,8 +185,8 @@ class ReentrantInterface(Node):
         Callback function for timer2
         """
         self.get_logger().info(Color.BLUE + "Timer2 callback" + Color.RESET)
-        # while True:
-        #     pass
+        while True:
+            pass
 
     def timer3_callback(self):
         """
