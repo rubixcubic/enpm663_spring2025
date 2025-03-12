@@ -1,0 +1,9 @@
+# Request
+uint8 time_of_day  # DAY or NIGHT
+uint8 day_of_week  # MONDAY, TUESDAY, etc.
+
+---
+
+# Response
+bool success
+string message  # Response message

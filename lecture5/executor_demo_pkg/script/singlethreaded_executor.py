@@ -36,11 +36,10 @@ def main(args=None):
         args (list, optional): Command-line arguments passed to the node. Defaults to None.
     """
     rclpy.init(args=args)
-    node1 = SingleThreadedExecutorInterface("single_threaded_executor_demo")
-    node2 = SingleThreadedExecutorInterface("single_threaded_executor_demo")
+    node = SingleThreadedExecutorInterface("single_threaded_executor_demo")
+
     executor = SingleThreadedExecutor()  # Explicit executor
-    executor.add_node(node1)
-    executor.add_node(node2)
+    executor.add_node(node)
     try:
         executor.spin()
     except KeyboardInterrupt:
