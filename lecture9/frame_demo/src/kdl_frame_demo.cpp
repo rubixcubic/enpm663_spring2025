@@ -1,72 +1,227 @@
-#include <rclcpp/rclcpp.hpp>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
-#include <kdl_frame_demo.hpp>
-#include <geometry_msgs/msg/quaternion.hpp>
-#include <utils.hpp>
+#include "frame_demo/kdl_frame_demo.hpp"
 
-void KDLFrameDemo::run() {
-    geometry_msgs::msg::Pose camera_pose_in_world = set_camera_pose_in_world();
-    geometry_msgs::msg::Pose part_pose_in_camera = set_part_pose_in_camera();
-    geometry_msgs::msg::Pose part_pose_in_world = multiply_kdl_frames(camera_pose_in_world, part_pose_in_camera);
+#include <Eigen/Geometry>
+#include <chrono>
+#include <functional>
+#include <iomanip>
+#include <kdl/frames.hpp>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <tf2_eigen/tf2_eigen.hpp>
 
-    // The quaternion from part_pose_in_world.orientation is of type geometry_msgs::msg::Quaternion
-    // get_euler_from_quaternion requires a tf2::Quaternion
-    // We need to convert part_pose_in_world.orientation to tf2::Quaternion
-    // See http://wiki.ros.org/tf2/Tutorials/Quaternions
-    tf2::Quaternion quat_tf;
-    tf2::fromMsg(part_pose_in_world.orientation, quat_tf);
-    auto rpy = utils_ptr_->set_euler_from_quaternion(quat_tf);
+using namespace std::chrono_literals;
+using std::placeholders::_1;
 
-    std::string output{};
-    output += "\n================================================\n"; 
-    output += "Part position in world frame:\n x: " + std::to_string(part_pose_in_world.position.x) +
-                                                                                                                          ", y: " + std::to_string(part_pose_in_world.position.y) +
-                                                                                                                          ", z: " + std::to_string(part_pose_in_world.position.z);
-
-    output += "\nPart orientation in world frame:\n rpy: " + std::to_string(rpy[0]) + ", " + std::to_string(rpy[1]) + ", " + std::to_string(rpy[2]) + "\n";
-    output += "================================================\n";
-
-    RCLCPP_INFO_STREAM(this->get_logger(), output);
+namespace {
+// Helper function to convert quaternion to Euler angles
+std::tuple<double, double, double> euler_from_quaternion(const geometry_msgs::msg::Quaternion& q) {
+    Eigen::Quaterniond eigen_q(q.w, q.x, q.y, q.z);
+    Eigen::Vector3d euler = eigen_q.toRotationMatrix().eulerAngles(0, 1, 2);
+    return std::make_tuple(euler[0], euler[1], euler[2]);
 }
 
-geometry_msgs::msg::Pose
-KDLFrameDemo::set_camera_pose_in_world()
-{
+// Helper function to convert geometry_msgs::msg::Quaternion to KDL::Rotation
+KDL::Rotation ros_quaternion_to_kdl_rotation(const geometry_msgs::msg::Quaternion& q) {
+    return KDL::Rotation::Quaternion(q.x, q.y, q.z, q.w);
+}
 
-    auto pose = geometry_msgs::msg::Pose();
-    pose.position.x = -2.286;
-    pose.position.y = 2.96;
-    pose.position.z = 1.8;
-    geometry_msgs::msg::Quaternion quaternion = utils_ptr_->set_quaternion_from_euler(M_PI, M_PI / 2, 0);
-    pose.orientation.w = quaternion.w;
-    pose.orientation.x = quaternion.x;
-    pose.orientation.y = quaternion.y;
-    pose.orientation.z = quaternion.z;
+// Helper function to convert KDL::Rotation to geometry_msgs::msg::Quaternion
+geometry_msgs::msg::Quaternion kdl_rotation_to_ros_quaternion(const KDL::Rotation& rot) {
+    double x, y, z, w;
+    rot.GetQuaternion(x, y, z, w);
+    geometry_msgs::msg::Quaternion q;
+    q.x = x;
+    q.y = y;
+    q.z = z;
+    q.w = w;
+    return q;
+}
+}  // namespace
+
+namespace frame_demo {
+
+KDLFrameDemo::KDLFrameDemo()
+    : Node("kdl_frame_demo"),
+      found_purple_pump_(false),
+      find_part_color_(ariac_msgs::msg::Part::PURPLE),
+      find_part_type_(ariac_msgs::msg::Part::PUMP) {
+    // Set parameters
+    if (!this->has_parameter("use_sim_time")) {
+        this->declare_parameter("use_sim_time", true);
+    }
+
+    // Declare the use_kdl_frame parameter with default value false
+    this->declare_parameter("use_kdl_frame", false);
+
+    // Get parameter values
+    use_sim_time_ = this->get_parameter("use_sim_time").as_bool();
+    use_kdl_frame_ = this->get_parameter("use_kdl_frame").as_bool();
+
+    // If use_kdl_frame is false, return early without initializing anything
+    if (!use_kdl_frame_) {
+        RCLCPP_INFO(this->get_logger(), "KDLFrameDemo is disabled. Set 'use_kdl_frame' to true to enable it.");
+        return;
+    }
+
+    // Create subscription for left bins camera
+    left_bins_camera_sub_ = this->create_subscription<ariac_msgs::msg::AdvancedLogicalCameraImage>(
+        "/ariac/sensors/left_bins_camera/image",
+        rclcpp::SensorDataQoS(),
+        std::bind(&KDLFrameDemo::left_bins_camera_callback, this, _1));
+
+    // Create subscription for right bins camera
+    right_bins_camera_sub_ = this->create_subscription<ariac_msgs::msg::AdvancedLogicalCameraImage>(
+        "/ariac/sensors/right_bins_camera/image",
+        rclcpp::SensorDataQoS(),
+        std::bind(&KDLFrameDemo::right_bins_camera_callback, this, _1));
+
+    // Create timer for finding parts
+    find_part_timer_ = this->create_wall_timer(
+        50ms, std::bind(&KDLFrameDemo::find_part_callback, this));
+
+    RCLCPP_INFO(this->get_logger(), "KDL frame demo started");
+}
+
+void KDLFrameDemo::find_part_callback() {
+    // Return early if the node is disabled
+    if (!use_kdl_frame_) {
+        return;
+    }
+
+    if (!found_purple_pump_) {
+        RCLCPP_INFO(this->get_logger(), "Searching...");
+
+        // Search for purple pump in left bin
+        for (const auto& part_pose : left_bin_parts_) {
+            if (part_pose.part.color == find_part_color_ &&
+                part_pose.part.type == find_part_type_) {
+                found_purple_pump_ = true;
+
+                // Check if left bins camera pose is available
+                if (left_bins_camera_pose_in_world_.has_value()) {
+                    part_pose_in_world_ = compute_part_pose_in_world(
+                        part_pose.pose,
+                        left_bins_camera_pose_in_world_.value());
+                } else {
+                    RCLCPP_ERROR(this->get_logger(), "Left bins camera pose not available");
+                }
+                break;
+            }
+        }
+
+        // If not found in left bin, search in right bin
+        if (!found_purple_pump_) {
+            for (const auto& part_pose : right_bin_parts_) {
+                if (part_pose.part.color == find_part_color_ &&
+                    part_pose.part.type == find_part_type_) {
+                    found_purple_pump_ = true;
+
+                    // Check if right bins camera pose is available
+                    if (right_bins_camera_pose_in_world_.has_value()) {
+                        part_pose_in_world_ = compute_part_pose_in_world(
+                            part_pose.pose,
+                            right_bins_camera_pose_in_world_.value());
+                    } else {
+                        RCLCPP_ERROR(this->get_logger(), "Right bins camera pose not available");
+                    }
+                    break;
+                }
+            }
+        }
+    }
+}
+
+geometry_msgs::msg::Pose KDLFrameDemo::compute_part_pose_in_world(
+    const geometry_msgs::msg::Pose& part_pose_in_camera,
+    const geometry_msgs::msg::Pose& camera_pose_in_world) {
+    // 1. Create KDL Frame for camera-to-world transformation
+    KDL::Frame kdl_camera_world(
+        ros_quaternion_to_kdl_rotation(camera_pose_in_world.orientation),
+        KDL::Vector(
+            camera_pose_in_world.position.x,
+            camera_pose_in_world.position.y,
+            camera_pose_in_world.position.z));
+
+    // 2. Create KDL Frame for part-to-camera transformation
+    KDL::Frame kdl_part_camera(
+        ros_quaternion_to_kdl_rotation(part_pose_in_camera.orientation),
+        KDL::Vector(
+            part_pose_in_camera.position.x,
+            part_pose_in_camera.position.y,
+            part_pose_in_camera.position.z));
+
+    // 3. Compute part-to-world transformation by composing the two frames
+    KDL::Frame kdl_part_world = kdl_camera_world * kdl_part_camera;
+
+    // 4. Convert the KDL frame back to a Pose message
+    geometry_msgs::msg::Pose pose;
+    pose.position.x = kdl_part_world.p.x();
+    pose.position.y = kdl_part_world.p.y();
+    pose.position.z = kdl_part_world.p.z();
+    pose.orientation = kdl_rotation_to_ros_quaternion(kdl_part_world.M);
+
+    // Log the resulting pose information
+    auto [roll, pitch, yaw] = euler_from_quaternion(pose.orientation);
+
+    std::stringstream output;
+    output << "\n"
+           << std::string(50, '=') << "\n";
+    output << "Part position in world frame: \n";
+    output << " x: " << std::fixed << std::setprecision(4) << pose.position.x;
+    output << ", y: " << std::fixed << std::setprecision(4) << pose.position.y;
+    output << ", z: " << std::fixed << std::setprecision(4) << pose.position.z << "\n";
+    output << "Part orientation in world frame: \n";
+    output << " roll: " << std::fixed << std::setprecision(4) << roll;
+    output << ", pitch: " << std::fixed << std::setprecision(4) << pitch;
+    output << ", yaw: " << std::fixed << std::setprecision(4) << yaw << "\n";
+    output << std::string(50, '=') << "\n";
+
+    RCLCPP_INFO(this->get_logger(), "%s", output.str().c_str());
+
     return pose;
 }
 
-geometry_msgs::msg::Pose KDLFrameDemo::set_part_pose_in_camera()
-{
-    auto pose = geometry_msgs::msg::Pose();
-    pose.position.x = 1.0769784427063858;
-    pose.position.y = 0.15500024548461805;
-    pose.position.z = -0.5660066794253416;
-    pose.orientation.w = 0.7058475442288268;
-    pose.orientation.x = -0.0013258319361092675;
-    pose.orientation.y = -0.7083612841685344;
-    pose.orientation.z = -0.0013332542580505244;
-    return pose;
+void KDLFrameDemo::left_bins_camera_callback(const ariac_msgs::msg::AdvancedLogicalCameraImage::SharedPtr msg) {
+    // Return early if the node is disabled
+    if (!use_kdl_frame_) {
+        return;
+    }
+
+    left_bin_parts_.clear();
+    if (msg->part_poses.empty()) {
+        RCLCPP_WARN(this->get_logger(), "No parts detected in left bins");
+        return;
+    }
+
+    if (!left_bins_camera_pose_in_world_.has_value()) {
+        left_bins_camera_pose_in_world_ = msg->sensor_pose;
+    }
+
+    for (const auto& part_pose : msg->part_poses) {
+        left_bin_parts_.push_back(part_pose);
+    }
 }
 
-geometry_msgs::msg::Pose KDLFrameDemo::multiply_kdl_frames(geometry_msgs::msg::Pose pose1, geometry_msgs::msg::Pose pose2)
-{
-    KDL::Frame frame1;
-    KDL::Frame frame2;
+void KDLFrameDemo::right_bins_camera_callback(const ariac_msgs::msg::AdvancedLogicalCameraImage::SharedPtr msg) {
+    // Return early if the node is disabled
+    if (!use_kdl_frame_) {
+        return;
+    }
 
-    tf2::fromMsg(pose1, frame1);
-    tf2::fromMsg(pose2, frame2);
+    right_bin_parts_.clear();
+    if (msg->part_poses.empty()) {
+        RCLCPP_WARN(this->get_logger(), "No parts detected in right bins");
+        return;
+    }
 
-    KDL::Frame frame3 = frame1 * frame2;
+    if (!right_bins_camera_pose_in_world_.has_value()) {
+        right_bins_camera_pose_in_world_ = msg->sensor_pose;
+    }
 
-    return tf2::toMsg(frame3);
+    for (const auto& part_pose : msg->part_poses) {
+        right_bin_parts_.push_back(part_pose);
+    }
 }
+
+}  // namespace frame_demo

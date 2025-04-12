@@ -1,21 +1,19 @@
-from typing import Tuple
+
 import rclpy
 import PyKDL
 from rclpy.node import Node
 from tf2_ros import TransformBroadcaster
-from geometry_msgs.msg import TransformStamped, Pose, Quaternion
+from geometry_msgs.msg import TransformStamped, Pose
 from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
-import tf2_ros
-import math
 from ariac_msgs.msg import (
     AdvancedLogicalCameraImage as AriacAdvancedLogicalCameraImage,
     Part as AriacPart,
 )
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.parameter import Parameter
-from tf_transformations import euler_from_quaternion, quaternion_from_euler
+from tf_transformations import euler_from_quaternion
 
 
 class BroadcasterDemo(Node):

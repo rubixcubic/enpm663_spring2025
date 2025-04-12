@@ -1,44 +1,55 @@
 cmake_minimum_required(VERSION 3.8)
 project(frame_demo)
 
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic)
+# Set C++ standard
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
 endif()
 
-# find dependencies
+# Find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(rclpy REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_eigen REQUIRED)
+find_package(ariac_msgs REQUIRED)
+find_package(orocos_kdl REQUIRED)
+find_package(kdl_parser REQUIRED)
+find_package(eigen3_cmake_module REQUIRED)
+find_package(Eigen3 REQUIRED)
 
-# include folder whish has all the header files
-include_directories(include)
-
-# Create a variable for all dependencies
-set(FRAME_DEMO_INCLUDE_DEPENDS
-  rclcpp 
-  tf2_ros
-  geometry_msgs
-  tf2
-  # orocos_kdl
-  tf2_ros
-  tf2_geometry_msgs
+# Include directories
+include_directories(
+  include
+  ${rclcpp_INCLUDE_DIRS}
+  ${geometry_msgs_INCLUDE_DIRS}
+  ${tf2_ros_INCLUDE_DIRS}
+  ${tf2_eigen_INCLUDE_DIRS}
+  ${ariac_msgs_INCLUDE_DIRS}
+  ${orocos_kdl_INCLUDE_DIRS}
+  ${kdl_parser_INCLUDE_DIRS}
+  ${Eigen3_INCLUDE_DIRS}
 )
 
-# Find all dependencies
-foreach(dependency IN ITEMS ${FRAME_DEMO_INCLUDE_DEPENDS})
-  find_package(${dependency} REQUIRED)
-endforeach()
+# Create a single executable with all components
+add_executable(frame_demo 
+  src/main.cpp
+  src/broadcaster_demo.cpp
+  src/kdl_frame_demo.cpp
+)
 
-
-#-----------------------------
-# C++
-#-----------------------------
-# add_executable(frame_demo_exe src/listener_demo.cpp src/broadcaster_demo.cpp src/kdl_frame_demo.cpp src/utils.cpp src/main.cpp)
-# ament_target_dependencies(frame_demo_exe ${FRAME_DEMO_INCLUDE_DEPENDS})
-
-# install(TARGETS frame_demo_exe
-#   RUNTIME DESTINATION lib/${PROJECT_NAME}
-# )
-
+# Link dependencies to our single executable
+ament_target_dependencies(frame_demo
+  rclcpp
+  geometry_msgs
+  tf2_ros
+  tf2_eigen
+  ariac_msgs
+  orocos_kdl
+  Eigen3
+)
 
 #-----------------------------
 # Python
@@ -49,7 +60,6 @@ ament_python_install_package(${PROJECT_NAME})
 #-----------------------------
 # Installation
 #-----------------------------
-
 # Install Python executables
 install(PROGRAMS
   script/frame_broadcaster_demo.py
@@ -57,12 +67,28 @@ install(PROGRAMS
   DESTINATION lib/${PROJECT_NAME}
 )
 
-# install(TARGETS
-# frame_demo_exe
-# DESTINATION lib/${PROJECT_NAME}
-# )
+# Install C++ executable
+install(TARGETS
+  frame_demo
+  DESTINATION lib/${PROJECT_NAME}
+)
 
-# install(DIRECTORY include
-#   DESTINATION share/${PROJECT_NAME}/
-# )
+# Install include directory for both project code and headers
+install(DIRECTORY include/
+  DESTINATION include
+)
+
+# Export package dependencies
+ament_export_include_directories(include)
+ament_export_dependencies(
+  rclcpp
+  geometry_msgs
+  tf2_ros
+  tf2_eigen
+  ariac_msgs
+  orocos_kdl
+  kdl_parser
+  Eigen3
+)
+
 ament_package()

@@ -9,13 +9,17 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <depend>rclpy</depend>
+  <!-- Dependencies for both building and execution -->
   <depend>rclcpp</depend>
-  <depend>tf2_ros</depend>
-  <depend>tf2_kdl</depend>
   <depend>geometry_msgs</depend>
-  <depend>python3-pykdl</depend>
-  <depend>tf2_py</depend>
+  <depend>kdl_parser</depend>
+  <depend>ariac_msgs</depend>
+  <depend>tf2_eigen</depend>
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>orocos_kdl_vendor</depend>
+  <depend>python_orocos_kdl_vendor</depend>
+  <depend>tf2_ros</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

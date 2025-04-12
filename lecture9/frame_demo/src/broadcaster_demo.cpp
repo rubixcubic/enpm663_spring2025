@@ -1,73 +1,214 @@
-#include <broadcaster_demo.hpp>
-#include "geometry_msgs/msg/transform_stamped.hpp"
-#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
-#include <utils.hpp>
-// needed for the listener
+#include "frame_demo/broadcaster_demo.hpp"
+
 #include <tf2/exceptions.h>
 
-// allows to use, 50ms, etc
+#include <chrono>
+#include <functional>
+#include <memory>
+#include <string>
+
 using namespace std::chrono_literals;
+using std::placeholders::_1;
 
-void BroadcasterDemo::static_broadcast_timer_cb_()
-{
-    geometry_msgs::msg::TransformStamped static_transform_stamped;
-    /////////////////////////////////////////////////
-    // First frame
-    /////////////////////////////////////////////////
-    static_transform_stamped.header.stamp = this->get_clock()->now();
-    static_transform_stamped.header.frame_id = "world";
-    static_transform_stamped.child_frame_id = "first_static_frame";
+namespace frame_demo {
 
-    static_transform_stamped.transform.translation.x = 3.5;
-    static_transform_stamped.transform.translation.y = 4.0;
-    static_transform_stamped.transform.translation.z = 5.0;
+BroadcasterDemo::BroadcasterDemo()
+    : Node("broadcaster_demo"),
+      found_purple_pump_(false),
+      part_frame_("purple_pump_1"),
+      find_part_color_(ariac_msgs::msg::Part::PURPLE),
+      find_part_type_(ariac_msgs::msg::Part::PUMP) {
+    // Set up parameters
+    if (!this->has_parameter("use_sim_time")) {
+        this->declare_parameter("use_sim_time", true);
+    }
 
-    geometry_msgs::msg::Quaternion quaternion = utils_ptr_->set_quaternion_from_euler(M_PI / 2, M_PI / 3, M_PI / 4);
-    static_transform_stamped.transform.rotation.x = quaternion.x;
-    static_transform_stamped.transform.rotation.y = quaternion.y;
-    static_transform_stamped.transform.rotation.z = quaternion.z;
-    static_transform_stamped.transform.rotation.w = quaternion.w;
-    // Send the transform
-    tf_static_broadcaster_->sendTransform(static_transform_stamped);
+    // Declare the use_broadcaster_listener parameter with default value false
+    this->declare_parameter("use_broadcaster_listener", false);
 
-    /////////////////////////////////////////////////
-    // Second frame
-    /////////////////////////////////////////////////
-    static_transform_stamped.header.stamp = this->get_clock()->now();
-    static_transform_stamped.header.frame_id = "world";
-    static_transform_stamped.child_frame_id = "second_static_frame";
+    // Get parameter values
+    use_sim_time_ = this->get_parameter("use_sim_time").as_bool();
+    use_broadcaster_listener_ = this->get_parameter("use_broadcaster_listener").as_bool();
 
-    static_transform_stamped.transform.translation.x = 1.5;
-    static_transform_stamped.transform.translation.y = 2.0;
-    static_transform_stamped.transform.translation.z = 3.0;
+    // If use_broadcaster_listener is false, return early without initializing anything
+    if (!use_broadcaster_listener_) {
+        RCLCPP_INFO(this->get_logger(), "BroadcasterDemo is disabled. Set 'use_broadcaster_listener' to true to enable it.");
+        return;
+    }
 
-    quaternion = utils_ptr_->set_quaternion_from_euler(M_PI / 5, M_PI / 5, M_PI / 5);
-    static_transform_stamped.transform.rotation.x = quaternion.x;
-    static_transform_stamped.transform.rotation.y = quaternion.y;
-    static_transform_stamped.transform.rotation.z = quaternion.z;
-    static_transform_stamped.transform.rotation.w = quaternion.w;
-    // Send the transform
-    tf_static_broadcaster_->sendTransform(static_transform_stamped);
+    // Create subscription for left bins camera
+    left_bins_camera_sub_ = this->create_subscription<ariac_msgs::msg::AdvancedLogicalCameraImage>(
+        "/ariac/sensors/left_bins_camera/image",
+        rclcpp::SensorDataQoS(),
+        std::bind(&BroadcasterDemo::left_bins_camera_callback, this, _1));
+
+    // Create subscription for right bins camera
+    right_bins_camera_sub_ = this->create_subscription<ariac_msgs::msg::AdvancedLogicalCameraImage>(
+        "/ariac/sensors/right_bins_camera/image",
+        rclcpp::SensorDataQoS(),
+        std::bind(&BroadcasterDemo::right_bins_camera_callback, this, _1));
+
+    // Create timer for finding parts
+    find_part_timer_ = this->create_wall_timer(
+        50ms, std::bind(&BroadcasterDemo::find_part_callback, this));
+
+    // Create transform broadcaster
+    tf_dynamic_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(*this);
+
+    // Create transform listener components
+    tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+    listener_timer_ = this->create_wall_timer(
+        500ms, std::bind(&BroadcasterDemo::listener_cb, this));
+
+    RCLCPP_INFO(this->get_logger(), "Broadcaster demo started");
 }
 
-void BroadcasterDemo::broadcast_timer_cb_()
-{
-    geometry_msgs::msg::TransformStamped dynamic_transform_stamped;
+void BroadcasterDemo::find_part_callback() {
+    // Return early if the node is disabled
+    if (!use_broadcaster_listener_) {
+        return;
+    }
 
-    // RCLCPP_INFO(this->get_logger(), "Broadcasting dynamic_frame");
-    dynamic_transform_stamped.header.stamp = this->get_clock()->now();
-    dynamic_transform_stamped.header.frame_id = "world";
-    dynamic_transform_stamped.child_frame_id = "dynamic_frame";
+    if (!found_purple_pump_) {
+        RCLCPP_INFO(this->get_logger(), "Searching...");
 
-    dynamic_transform_stamped.transform.translation.x = 5.0;
-    dynamic_transform_stamped.transform.translation.y = 0.4;
-    dynamic_transform_stamped.transform.translation.z = 0.3;
+        // Search for purple pump in left bin
+        for (const auto& part_pose : left_bin_parts_) {
+            if (part_pose.part.color == find_part_color_ &&
+                part_pose.part.type == find_part_type_) {
+                part_parent_frame_ = "left_bins_camera_frame";
+                part_pose_ = part_pose.pose;
+                found_purple_pump_ = true;
+                generate_transform(part_parent_frame_.value(), part_frame_, part_pose_.value());
+                break;
+            }
+        }
 
-    geometry_msgs::msg::Quaternion quaternion = utils_ptr_->set_quaternion_from_euler(M_PI, M_PI / 2, M_PI / 3);
-    dynamic_transform_stamped.transform.rotation.x = quaternion.x;
-    dynamic_transform_stamped.transform.rotation.y = quaternion.y;
-    dynamic_transform_stamped.transform.rotation.z = quaternion.z;
-    dynamic_transform_stamped.transform.rotation.w = quaternion.w;
-    // Send the transform
-    tf_broadcaster_->sendTransform(dynamic_transform_stamped);
+        // If not found in left bin, search in right bin
+        if (!found_purple_pump_) {
+            for (const auto& part_pose : right_bin_parts_) {
+                if (part_pose.part.color == find_part_color_ &&
+                    part_pose.part.type == find_part_type_) {
+                    part_parent_frame_ = "right_bins_camera_frame";
+                    part_pose_ = part_pose.pose;
+                    found_purple_pump_ = true;
+                    generate_transform(part_parent_frame_.value(), part_frame_, part_pose_.value());
+                    break;
+                }
+            }
+        }
+    } else {
+        // If purple pump was already found, broadcast its transform
+        broadcast();
+    }
 }
+
+void BroadcasterDemo::broadcast() {
+    // Return early if the node is disabled
+    if (!use_broadcaster_listener_ || !tf_dynamic_broadcaster_) {
+        return;
+    }
+
+    tf_dynamic_broadcaster_->sendTransform(transforms_);
+}
+
+void BroadcasterDemo::left_bins_camera_callback(const ariac_msgs::msg::AdvancedLogicalCameraImage::SharedPtr msg) {
+    // Return early if the node is disabled
+    if (!use_broadcaster_listener_) {
+        return;
+    }
+
+    left_bin_parts_.clear();
+    if (msg->part_poses.empty()) {
+        RCLCPP_WARN(this->get_logger(), "No parts detected in left bins");
+        return;
+    }
+
+    for (const auto& part_pose : msg->part_poses) {
+        left_bin_parts_.push_back(part_pose);
+    }
+}
+
+void BroadcasterDemo::right_bins_camera_callback(const ariac_msgs::msg::AdvancedLogicalCameraImage::SharedPtr msg) {
+    // Return early if the node is disabled
+    if (!use_broadcaster_listener_) {
+        return;
+    }
+
+    right_bin_parts_.clear();
+    if (msg->part_poses.empty()) {
+        RCLCPP_WARN(this->get_logger(), "No parts detected in right bins");
+        return;
+    }
+
+    for (const auto& part_pose : msg->part_poses) {
+        right_bin_parts_.push_back(part_pose);
+    }
+}
+
+void BroadcasterDemo::generate_transform(
+    const std::string& parent,
+    const std::string& child,
+    const geometry_msgs::msg::Pose& pose) {
+    geometry_msgs::msg::TransformStamped transform_stamped;
+
+    // Set header information
+    transform_stamped.header.stamp = this->get_clock()->now();
+    transform_stamped.header.frame_id = parent;
+    transform_stamped.child_frame_id = child;
+
+    // Set translation from pose position
+    transform_stamped.transform.translation.x = pose.position.x;
+    transform_stamped.transform.translation.y = pose.position.y;
+    transform_stamped.transform.translation.z = pose.position.z;
+
+    // Set rotation from pose orientation
+    transform_stamped.transform.rotation.x = pose.orientation.x;
+    transform_stamped.transform.rotation.y = pose.orientation.y;
+    transform_stamped.transform.rotation.z = pose.orientation.z;
+    transform_stamped.transform.rotation.w = pose.orientation.w;
+
+    // Add transform to list
+    transforms_.push_back(transform_stamped);
+}
+
+void BroadcasterDemo::listener_cb() {
+    // Return early if the node is disabled
+    if (!use_broadcaster_listener_ || !tf_buffer_) {
+        return;
+    }
+
+    try {
+        if (!part_parent_frame_.has_value()) {
+            RCLCPP_WARN(this->get_logger(), "Part parent frame is not set.");
+            return;
+        }
+
+        // Lookup transform between world frame and part frame
+        geometry_msgs::msg::TransformStamped transform =
+            tf_buffer_->lookupTransform("world", part_frame_, tf2::TimePointZero);
+
+        // Log the transform information
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Transform between world and %s: \n"
+            "translation: [%f, %f, %f] \n"
+            "rotation: [%f, %f, %f, %f]",
+            part_frame_.c_str(),
+            transform.transform.translation.x,
+            transform.transform.translation.y,
+            transform.transform.translation.z,
+            transform.transform.rotation.x,
+            transform.transform.rotation.y,
+            transform.transform.rotation.z,
+            transform.transform.rotation.w);
+    } catch (const tf2::TransformException& ex) {
+        RCLCPP_ERROR(
+            this->get_logger(),
+            "Could not get transform between world and %s: %s",
+            part_frame_.c_str(), ex.what());
+    }
+}
+
+}  // namespace frame_demo
