@@ -17,8 +17,8 @@ from moveit_configs_utils import MoveItConfigsBuilder
 def launch_setup(context, *args, **kwargs):
     # Extract launch configurations
     use_moveit = True
-    start_rviz = LaunchConfiguration("rviz")
-
+    # start_rviz = LaunchConfiguration("rviz")
+    start_moveit = LaunchConfiguration("moveit")
     # Set up paths
     ariac_description_pkg = get_package_share_directory("ariac_description")
     ariac_moveit_config_pkg = get_package_share_directory("ariac_moveit_config")
@@ -54,7 +54,7 @@ def launch_setup(context, *args, **kwargs):
     parameters.update(moveit_config.to_dict())
 
     # Move Group Node
-    move_group = IncludeLaunchDescription(
+    move_group_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             [
                 os.path.join(
@@ -62,7 +62,8 @@ def launch_setup(context, *args, **kwargs):
                 ),
             ]
         ),
-        condition=IfCondition(str(parameters["use_moveit"])),
+        # condition=IfCondition(str(parameters["use_moveit"])),
+        condition=IfCondition(start_moveit),
     )
 
     # RViz Node
@@ -79,11 +80,11 @@ def launch_setup(context, *args, **kwargs):
             moveit_config.joint_limits,
             {"use_sim_time": True},
         ],
-        condition=IfCondition(start_rviz),
+        # condition=IfCondition(start_rviz),
     )
 
     # List of nodes to start
-    nodes_to_start = [move_group, rviz_node]
+    nodes_to_start = [move_group_launch, rviz_node]
 
     return nodes_to_start
 
@@ -91,8 +92,11 @@ def launch_setup(context, *args, **kwargs):
 def generate_launch_description():
     # Declare launch arguments
     declared_arguments = [
+        # DeclareLaunchArgument(
+        #     "rviz", default_value="false", description="Launch RViz visualization?",
+        # ),
         DeclareLaunchArgument(
-            "rviz", default_value="false", description="Launch RViz visualization?"
+            "moveit", default_value="false", description="Start MoveIt?",
         ),
     ]
 
