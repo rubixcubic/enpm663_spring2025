@@ -3,9 +3,12 @@
 <package format="3">
   <name>frame_demo</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>
+    A demonstration package for teaching ROS 2 coordinate frames, transforms, and kinematic trees using tf2, KDL, and Eigen.
+    This package introduces students to how frames are created, transformed, and managed within robotic systems.
+  </description>
   <maintainer email="zeidk@umd.edu">zeid</maintainer>
-  <license>TODO: License declaration</license>
+  <license>BSD-3-Clause</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
