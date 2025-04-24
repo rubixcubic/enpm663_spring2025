@@ -7,6 +7,7 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
 find_package(rclpy REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -18,10 +19,22 @@ find_package(moveit_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 
+# Install Python modules
+ament_python_install_package(${PROJECT_NAME} SCRIPTS_DESTINATION lib/${PROJECT_NAME})
+
+
+# Install Python scripts
+install(PROGRAMS
+  script/minimal_demo.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 # Install extra files
 install(DIRECTORY
   config
   launch
+  resources
+  meshes
   DESTINATION share/${PROJECT_NAME}
 )
 

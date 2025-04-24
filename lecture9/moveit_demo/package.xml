@@ -11,6 +11,8 @@
   <license>BSD-3-Clause</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
 
   <depend>rclpy</depend>
   <depend>rclcpp</depend>
@@ -24,8 +26,12 @@
   <depend>tf2_ros</depend>
   <depend>kdl_parser</depend>
   <depend>tf2_eigen</depend>
-  <depend>orocos_kdl_vendor</depend>
   <depend>python_orocos_kdl_vendor</depend>
+  <depend>orocos_kdl_vendor</depend>
+  <depend>moveit_py</depend>
+  <depend>moveit_core</depend>
+  
+  <exec_depend>moveit</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
