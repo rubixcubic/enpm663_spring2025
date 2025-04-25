@@ -85,14 +85,6 @@ class RobotController(Node):
         PartMsg.PURPLE: "purple",
     }
 
-    _part_colors_emoji = {
-        PartMsg.RED: "🟥",
-        PartMsg.BLUE: "🟦",
-        PartMsg.GREEN: "🟩",
-        PartMsg.ORANGE: "🟧",
-        PartMsg.PURPLE: "🟪",
-    }
-
     _part_types = {
         PartMsg.BATTERY: "battery",
         PartMsg.PUMP: "pump",
@@ -117,13 +109,6 @@ class RobotController(Node):
         PartMsg.SENSOR: 0.07,
     }
 
-    _quad_offsets = {
-        1: (-0.08, 0.12),
-        2: (0.08, 0.12),
-        3: (-0.08, -0.12),
-        4: (0.08, -0.12),
-    }
-
     _rail_positions = {
         "agv1": -4.5,
         "agv2": -1.2,
@@ -136,239 +121,37 @@ class RobotController(Node):
     def __init__(self):
         super().__init__("robot_controller_py")
 
-        self._world_collision_objects = []
-        # In your __init__ method
-        self._debug_mode = False  # Set to True only when debugging visualization
-        self.declare_parameter('motion_planning.velocity_scale', 1.0)
-        self.declare_parameter('motion_planning.acceleration_scale', 0.8)
-        self.declare_parameter('motion_planning.planning_time', 1.0)
+        # ----------------------------------------------------------------------
+        # Configuration Parameters
+        # ----------------------------------------------------------------------
+        self.declare_parameter("motion_planning.velocity_scale", 1.0)
+        self.declare_parameter("motion_planning.acceleration_scale", 0.8)
+        self.declare_parameter("motion_planning.planning_time", 1.0)
+
+        # ----------------------------------------------------------------------
+        # Internal State Variables
+        # ----------------------------------------------------------------------
         self._objects_added_to_planning_scene = False
+        self._competition_start_requested = False
         self._pending_gripper_state = None
         self._gripper_state_future = None
-
-        # ROS2 callback groups
-        self.ariac_cb_group = MutuallyExclusiveCallbackGroup()
-        self.moveit_cb_group = MutuallyExclusiveCallbackGroup()
-        self._reentrant_cb_group = ReentrantCallbackGroup()
-
-        # Add a service client for starting the competition
-        self._start_competition_client = self.create_client(
-            Trigger, "/ariac/start_competition"
-        )
-
-        # Add a service client for ending the competition
-        self._end_competition_client = self.create_client(
-            Trigger, "/ariac/end_competition"
-        )
-
-        # Subscriber to the competition state topic
-        self._competition_state_sub = self.create_subscription(
-            CompetitionStateMsg,
-            "/ariac/competition_state",
-            self._competition_state_cb,
-            10,
-            callback_group=self._reentrant_cb_group,
-        )
-
-        # Store the state of the competition
-        self._competition_state = None
-
-        # Add a timer to check if competition is ready
-        self._check_competition_ready_timer = self.create_timer(
-            0.5, self._check_competition_ready
-        )
-
-        # Flag to track if we've started the competition
-        self._competition_start_requested = False
-
-        # Store each camera image as an AdvancedLogicalCameraImage object
         self._camera_image = None
-
-        # Turn on debug image publishing for part detection
-        self.display_bounding_boxes = False
-
-        # cv_bridge interface
-        self._bridge = CvBridge()
-
-        # Store RGB images from the right bins camera so they can be used for part detection
         self._right_bins_camera_image = None
         self._left_bins_camera_image = None
-
-        # template images for parts
-        self.sensor_template = np.ndarray([])
-        self.battery_template = np.ndarray([])
-        self.pump_template = np.ndarray([])
-        self.regulator_template = np.ndarray([])
-
-        # HSV colour bounds
-        self.HSVcolors = {
-            "red": {
-                "hmin": 0,
-                "smin": 10,
-                "vmin": 115,
-                "hmax": 4,
-                "smax": 255,
-                "vmax": 255,
-            },
-            "green": {
-                "hmin": 57,
-                "smin": 0,
-                "vmin": 0,
-                "hmax": 80,
-                "smax": 255,
-                "vmax": 255,
-            },
-            "blue": {
-                "hmin": 116,
-                "smin": 0,
-                "vmin": 134,
-                "hmax": 121,
-                "smax": 255,
-                "vmax": 255,
-            },
-            "orange": {
-                "hmin": 14,
-                "smin": 0,
-                "vmin": 200,
-                "hmax": 21,
-                "smax": 255,
-                "vmax": 255,
-            },
-            "purple": {
-                "hmin": 130,
-                "smin": 180,
-                "vmin": 160,
-                "hmax": 150,
-                "smax": 255,
-                "vmax": 255,
-            },
-        }
-
-        # BGR reference colours
-        self.colors = {
-            "red": (0, 0, 255),
-            "green": (0, 255, 0),
-            "blue": (255, 0, 0),
-            "orange": (100, 100, 255),
-            "purple": (255, 0, 100),
-        }
-
-        # Part Pose Reporting Object
-        self.part_poses = {
-            "red": {"battery": [], "pump": [], "sensor": [], "regulator": []},
-            "green": {"battery": [], "pump": [], "sensor": [], "regulator": []},
-            "blue": {"battery": [], "pump": [], "sensor": [], "regulator": []},
-            "orange": {"battery": [], "pump": [], "sensor": [], "regulator": []},
-            "purple": {"battery": [], "pump": [], "sensor": [], "regulator": []},
-        }
-        # Center of Part Poses
-        self.centered_part_poses = {
-            "red": {"battery": [], "pump": [], "sensor": [], "regulator": []},
-            "green": {"battery": [], "pump": [], "sensor": [], "regulator": []},
-            "blue": {"battery": [], "pump": [], "sensor": [], "regulator": []},
-            "orange": {"battery": [], "pump": [], "sensor": [], "regulator": []},
-            "purple": {"battery": [], "pump": [], "sensor": [], "regulator": []},
-        }
-
-        self.slot_mapping = {
-            (1, 1): 1,
-            (1, 2): 2,
-            (1, 3): 3,
-            (2, 1): 4,
-            (2, 2): 5,
-            (2, 3): 6,
-            (3, 1): 7,
-            (3, 2): 8,
-            (3, 3): 9,
-        }
-
-        self.color_mapping = {"red": 0, "green": 1, "blue": 2, "orange": 3, "purple": 4}
-
-        self.type_mapping = {"battery": 10, "pump": 11, "sensor": 12, "regulator": 13}
-
-        # read in part templates
-        self.load_part_templates()
-
-        # Subscriber to the floor gripper state topic
-        self._floor_robot_gripper_state_sub = self.create_subscription(
-            VacuumGripperState,
-            "/ariac/floor_robot_gripper_state",
-            self._floor_robot_gripper_state_cb,
-            qos_profile_sensor_data,
-            callback_group=self._reentrant_cb_group,
-        )
-
-        # Attribute to store the current state of the floor robot gripper
-        self._floor_robot_gripper_state = VacuumGripperState()
-
-        # Service client for turning on/off the vacuum gripper on the floor robot
-        self._floor_gripper_enable = self.create_client(
-            VacuumGripperControl, "/ariac/floor_robot_enable_gripper"
-        )
-
-        # Moveit_py variables
-        self._ariac_robots = MoveItPy(node_name="ariac_robots_moveit_py")
-        self._ariac_robots_state = RobotState(self._ariac_robots.get_robot_model())
-
-        self._floor_robot = self._ariac_robots.get_planning_component("floor_robot")
-        self._planning_scene_monitor = self._ariac_robots.get_planning_scene_monitor()
-
-        # Parts found in the bins
+        self._part_already_picked_up = False
+        self._competition_state = None
+        self._mesh_file_path = get_package_share_directory("moveit_demo") + "/meshes/"
         self._left_bins_parts = []
         self._right_bins_parts = []
-        self._left_bins_camera_pose = Pose()
-        self._right_bins_camera_pose = Pose()
+        self._tf_buffer = Buffer()
+        self._tf_listener = TransformListener(self._tf_buffer, self)
 
-        # service clients
-        self._get_cartesian_path_client = self.create_client(
-            GetCartesianPath,
-            "compute_cartesian_path",
-            callback_group=self._reentrant_cb_group,
-        )
+        # ----------------------------------------------------------------------
+        # Data Structures
+        # ----------------------------------------------------------------------
+        self._world_collision_objects = []
 
-        # Camera subs
-        self.left_bins_camera_sub = self.create_subscription(
-            AdvancedLogicalCameraImageMsg,
-            "/ariac/sensors/left_bins_camera/image",
-            self._left_bins_camera_cb,
-            qos_profile_sensor_data,
-            callback_group=self.moveit_cb_group,
-        )
-
-        self.right_bins_camera_sub = self.create_subscription(
-            AdvancedLogicalCameraImageMsg,
-            "/ariac/sensors/right_bins_camera/image",
-            self._right_bins_camera_cb,
-            qos_profile_sensor_data,
-            callback_group=self.moveit_cb_group,
-        )
-
-        # TF
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
-
-        self._floor_robot_attached_part_ = PartMsg()
-
-        self._change_gripper_client = self.create_client(
-            ChangeGripper, "/ariac/floor_robot_change_gripper"
-        )
-
-        # Planning Scene Info
-        self.planning_scene_sub = self.create_subscription(
-            PlanningScene,
-            "/planning_scene",
-            self.get_planning_scene_msg,
-            10,
-            callback_group=self.moveit_cb_group,
-        )
-
-        self.planning_scene_msg = PlanningScene()
-
-        # Meshes file path
-        self._mesh_file_path = get_package_share_directory("moveit_demo") + "/meshes/"
-
-        # Predefined joint configurations
-        self.floor_joint_positions_arrs = {
+        self._floor_joint_positions_arrs = {
             "floor_kts1_js_": [4.0, 1.57, -1.57, 1.57, -1.57, -1.57, 0.0],
             "floor_kts2_js_": [-4.0, -1.57, -1.57, 1.57, -1.57, -1.57, 0.0],
             "left_bins": [3.0, 0.0, -1.57, 1.57, -1.57, -1.57, 0.0],
@@ -383,9 +166,8 @@ class RobotController(Node):
                 0.0,
             ],
         }
-
         for i in range(1, 5):
-            self.floor_joint_positions_arrs[f"agv{i}"] = [
+            self._floor_joint_positions_arrs[f"agv{i}"] = [
                 self._rail_positions[f"agv{i}"],
                 0.0,
                 -1.57,
@@ -394,16 +176,91 @@ class RobotController(Node):
                 -1.57,
                 0.0,
             ]
-
-        self.floor_position_dict = {
+        self._floor_position_dict = {
             key: self._create_floor_joint_position_state(
-                self.floor_joint_positions_arrs[key]
+                self._floor_joint_positions_arrs[key]
             )
-            for key in self.floor_joint_positions_arrs.keys()
+            for key in self._floor_joint_positions_arrs.keys()
         }
 
+        # ----------------------------------------------------------------------
+        # ROS 2 Communication
+        # ----------------------------------------------------------------------
+
+        # ROS2 callback groups
+        self.ariac_cb_group = MutuallyExclusiveCallbackGroup()
+        self.moveit_cb_group = MutuallyExclusiveCallbackGroup()
+        self.service_cb_group = ReentrantCallbackGroup()
+
+        # Service clients
+        self._start_competition_client = self.create_client(
+            Trigger, "/ariac/start_competition"
+        )
+        self._end_competition_client = self.create_client(
+            Trigger, "/ariac/end_competition"
+        )
+        self._floor_gripper_enable = self.create_client(
+            VacuumGripperControl, "/ariac/floor_robot_enable_gripper"
+        )
+        self._change_gripper_client = self.create_client(
+            ChangeGripper, "/ariac/floor_robot_change_gripper"
+        )
+        self._get_cartesian_path_client = self.create_client(
+            GetCartesianPath,
+            "compute_cartesian_path",
+            callback_group=self.service_cb_group,
+        )
+
+        # Subscribers
+        self._competition_state_sub = self.create_subscription(
+            CompetitionStateMsg,
+            "/ariac/competition_state",
+            self._competition_state_cb,
+            10,
+            callback_group=self.service_cb_group,
+        )
+        self._floor_robot_gripper_state_sub = self.create_subscription(
+            VacuumGripperState,
+            "/ariac/floor_robot_gripper_state",
+            self._floor_robot_gripper_state_cb,
+            qos_profile_sensor_data,
+            callback_group=self.ariac_cb_group,
+        )
+        self._left_bins_camera_sub = self.create_subscription(
+            AdvancedLogicalCameraImageMsg,
+            "/ariac/sensors/left_bins_camera/image",
+            self._left_bins_camera_cb,
+            qos_profile_sensor_data,
+            callback_group=self.moveit_cb_group,
+        )
+        self._right_bins_camera_sub = self.create_subscription(
+            AdvancedLogicalCameraImageMsg,
+            "/ariac/sensors/right_bins_camera/image",
+            self._right_bins_camera_cb,
+            qos_profile_sensor_data,
+            callback_group=self.moveit_cb_group,
+        )
+
+        # ----------------------------------------------------------------------
+        # MoveIt 2 Setup
+        # ----------------------------------------------------------------------
+        self._ariac_robots = MoveItPy(node_name="ariac_robots_moveit_py")
+        self._ariac_robots_state = RobotState(self._ariac_robots.get_robot_model())
+        self._floor_robot = self._ariac_robots.get_planning_component("floor_robot")
+        self._planning_scene_monitor = self._ariac_robots.get_planning_scene_monitor()
+
+        # ----------------------------------------------------------------------
+        # Timers
+        # ----------------------------------------------------------------------
+        self._check_competition_ready_timer = self.create_timer(
+            0.5, self._check_competition_ready
+        )
         self._control_timer = self.create_timer(2.0, self._control_cb)
-        self._part_already_picked_up = False
+
+        # ----------------------------------------------------------------------
+        # Part Detection
+        # ----------------------------------------------------------------------
+        # self.load_part_templates()
 
     def _competition_start_callback(self, future):
         """
@@ -487,11 +344,23 @@ class RobotController(Node):
                     "Successfully added all objects to planning scene"
                 )
                 self._objects_added_to_planning_scene = True
+
+                # Force extra publishing to make sure RViz shows everything
+                self._publish_planning_scene_for_rviz()
             else:
                 self.get_logger().warn(
                     "Failed to add all objects to planning scene, will retry"
                 )
                 return  # Exit early to retry on next timer callback
+
+        # Every few cycles, refresh the planning scene visualization
+        if hasattr(self, "_viz_refresh_counter"):
+            self._viz_refresh_counter += 1
+            if self._viz_refresh_counter >= 10:  # Refresh every 10 cycles
+                self._publish_planning_scene_for_rviz()
+                self._viz_refresh_counter = 0
+        else:
+            self._viz_refresh_counter = 0
 
         # Verify that planning scene is ready by checking for expected objects
         if not self._verify_planning_scene_ready():
@@ -524,12 +393,12 @@ class RobotController(Node):
             part_to_pick.color = PartMsg.PURPLE
             part_to_pick.type = PartMsg.PUMP
 
-            success = self.floor_robot_pick_bin_part(part_to_pick)
+            success = self._floor_robot_pick_bin_part(part_to_pick)
             if success:
                 self._part_already_picked_up = True
                 self.get_logger().info("Successfully picked up part")
                 # Force refresh the planning scene visualization
-                self.refresh_planning_scene_display()
+                self._refresh_planning_scene_display()
             else:
                 self.get_logger().warn("Failed to pick up part, will retry later")
 
@@ -553,9 +422,9 @@ class RobotController(Node):
 
             # Log what objects we have
             existing_ids = [obj.id for obj in self._world_collision_objects]
-            self.get_logger().info(
-                f"Planning scene has these tracked objects: {existing_ids}"
-            )
+            # self.get_logger().info(
+            #     f"Planning scene has these tracked objects: {existing_ids}"
+            # )
 
             # Check if expected objects are present
             expected_objects = [
@@ -623,12 +492,101 @@ class RobotController(Node):
             self.get_logger().error(f"Error verifying planning scene: {str(e)}")
             return False
 
+    def _publish_planning_scene_for_rviz(self):
+        """
+        Publish planning scene to ensure RViz visualization is updated.
+        """
+        self.get_logger().info("Publishing planning scene for RViz visualization")
+
+        # Create a publisher if it doesn't exist
+        if not hasattr(self, "_planning_scene_publisher"):
+            self._planning_scene_publisher = self.create_publisher(
+                PlanningScene, "/planning_scene", 10
+            )
+            # Short delay to allow publisher to initialize
+            time.sleep(0.5)
+
+        # Create a planning scene message with all objects
+        scene_msg = PlanningScene()
+        scene_msg.is_diff = False  # Send complete scene
+
+        # Get current robot state
+        with self._planning_scene_monitor.read_write() as scene:
+            scene_msg.robot_state = robotStateToRobotStateMsg(scene.current_state)
+
+        # Add all collision objects
+        for co in self._world_collision_objects:
+            scene_msg.world.collision_objects.append(co)
+
+        # Publish the scene
+        self._planning_scene_publisher.publish(scene_msg)
+
+        # Publish a few times to ensure RViz receives it
+        time.sleep(0.2)
+        self._planning_scene_publisher.publish(scene_msg)
+
+        self.get_logger().info(
+            f"Published planning scene with {len(scene_msg.world.collision_objects)} objects"
+        )
+
+    # def _create_mesh_collision_object(self, name, mesh_path, pose, frame_id="world"):
+    #     """Create a collision object from a mesh file with better error handling."""
+    #     try:
+    #         if not path.exists(mesh_path):
+    #             self.get_logger().error(f"Mesh file not found: {mesh_path}")
+    #             return None
+
+    #         # Create the collision object
+    #         co = CollisionObject()
+    #         co.id = name
+    #         co.header.frame_id = frame_id
+    #         co.header.stamp = self.get_clock().now().to_msg()
+
+    #         # Load the mesh
+    #         with pyassimp.load(mesh_path) as scene:
+    #             if not scene.meshes:
+    #                 self.get_logger().error(f"No meshes found in {mesh_path}")
+    #                 return None
+
+    #             mesh = Mesh()
+    #             # Add triangles
+    #             for face in scene.meshes[0].faces:
+    #                 triangle = MeshTriangle()
+    #                 if hasattr(face, "indices"):
+    #                     if len(face.indices) == 3:
+    #                         triangle.vertex_indices = [
+    #                             face.indices[0],
+    #                             face.indices[1],
+    #                             face.indices[2]
+    #                         ]
+    #                         mesh.triangles.append(triangle)
+    #                 else:
+    #                     if len(face) == 3:
+    #                         triangle.vertex_indices = [face[0], face[1], face[2]]
+    #                         mesh.triangles.append(triangle)
+
+    #             # Add vertices
+    #             for vertex in scene.meshes[0].vertices:
+    #                 point = Point()
+    #                 point.x = float(vertex[0])
+    #                 point.y = float(vertex[1])
+    #                 point.z = float(vertex[2])
+    #                 mesh.vertices.append(point)
+
+    #         # Add the mesh to the collision object
+    #         co.meshes.append(mesh)
+    #         co.mesh_poses.append(pose)
+    #         co.operation = CollisionObject.ADD
+
+    #         return co
+
+    #     except Exception as e:
+    #         self.get_logger().error(f"Error creating collision object {name}: {str(e)}")
+    #         return None
+
     def _add_objects_to_planning_scene(self):
         """
-        Add all required collision objects to the planning scene with detailed logging.
-
-        Returns:
-            bool: True if all objects were added successfully, False otherwise
+        Add all required collision objects to the planning scene in smaller batches.
         """
         try:
             # Clear any existing objects to start fresh
@@ -652,88 +610,146 @@ class RobotController(Node):
                 objects_dict = yaml.safe_load(object_file)
 
             # Log how many objects we're trying to add
+            object_keys = list(objects_dict.keys())
             self.get_logger().info(
-                f"Found {len(objects_dict.keys())} objects in configuration file"
+                f"Found {len(object_keys)} objects in configuration file"
             )
-            self.get_logger().info(f"Object IDs: {list(objects_dict.keys())}")
 
-            # Track successes and failures
-            successful_objects = []
-            failed_objects = []
+            # Process objects in batches of 5 to prevent overloading
+            batch_size = 5
+            success_count = 0
 
-            # Process each object
-            for key in objects_dict.keys():
-                try:
-                    self.get_logger().info(f"Processing object: {key}")
+            for batch_start in range(0, len(object_keys), batch_size):
+                batch_end = min(batch_start + batch_size, len(object_keys))
+                batch_keys = object_keys[batch_start:batch_end]
 
-                    # Create a pose for the object
-                    object_pose = Pose()
-                    object_pose.position.x = float(objects_dict[key]["position"][0])
-                    object_pose.position.y = float(objects_dict[key]["position"][1])
-                    object_pose.position.z = float(objects_dict[key]["position"][2])
-                    object_pose.orientation.x = float(
-                        objects_dict[key]["orientation"][0]
-                    )
-                    object_pose.orientation.y = float(
-                        objects_dict[key]["orientation"][1]
-                    )
-                    object_pose.orientation.z = float(
-                        objects_dict[key]["orientation"][2]
-                    )
-                    object_pose.orientation.w = float(
-                        objects_dict[key]["orientation"][3]
-                    )
+                # Create a planning scene message for this batch
+                planning_scene = PlanningScene()
+                planning_scene.is_diff = True
 
-                    # Get the mesh file
-                    mesh_file = objects_dict[key]["file"]
-                    mesh_path = self._mesh_file_path + mesh_file
+                # Process each object in this batch
+                batch_objects = []
+                for key in batch_keys:
+                    try:
+                        self.get_logger().info(f"Processing object: {key}")
 
-                    # Check if the mesh file exists
-                    if not path.exists(mesh_path):
-                        self.get_logger().error(f"Mesh file not found: {mesh_path}")
-                        failed_objects.append(key)
-                        continue
-
-                    # Try to add the object to the planning scene
-                    success = self._add_model_to_planning_scene(
-                        key, mesh_file, object_pose
-                    )
-
-                    if success:
-                        successful_objects.append(key)
-                        self.get_logger().info(
-                            f"Successfully added {key} to planning scene"
+                        # Create a pose for the object
+                        object_pose = Pose()
+                        object_pose.position.x = float(objects_dict[key]["position"][0])
+                        object_pose.position.y = float(objects_dict[key]["position"][1])
+                        object_pose.position.z = float(objects_dict[key]["position"][2])
+                        object_pose.orientation.x = float(
+                            objects_dict[key]["orientation"][0]
                         )
-                    else:
-                        failed_objects.append(key)
+                        object_pose.orientation.y = float(
+                            objects_dict[key]["orientation"][1]
+                        )
+                        object_pose.orientation.z = float(
+                            objects_dict[key]["orientation"][2]
+                        )
+                        object_pose.orientation.w = float(
+                            objects_dict[key]["orientation"][3]
+                        )
+
+                        # Get the mesh file
+                        mesh_file = objects_dict[key]["file"]
+                        mesh_path = self._mesh_file_path + mesh_file
+
+                        # Check if the mesh file exists
+                        if not path.exists(mesh_path):
+                            self.get_logger().error(f"Mesh file not found: {mesh_path}")
+                            continue
+
+                        # Create collision object
+                        co = self._create_mesh_collision_object(
+                            key, mesh_path, object_pose
+                        )
+                        if co is not None:
+                            # Add to our lists
+                            self._world_collision_objects.append(co)
+                            batch_objects.append(co)
+                            planning_scene.world.collision_objects.append(co)
+                            self.get_logger().info(
+                                f"Added {key} to planning scene message"
+                            )
+
+                    except Exception as obj_error:
                         self.get_logger().error(
-                            f"Failed to add {key} to planning scene"
+                            f"Error processing object {key}: {str(obj_error)}"
                         )
 
-                except Exception as obj_error:
-                    self.get_logger().error(
-                        f"Error processing object {key}: {str(obj_error)}"
-                    )
-                    failed_objects.append(key)
+                # Apply this batch if it has any objects
+                if len(batch_objects) > 0:
+                    # Direct publish instead of using the service
+                    self._direct_publish_planning_scene(planning_scene)
+                    success_count += len(batch_objects)
+                    # Give some time between batches
+                    time.sleep(0.2)
 
-            # Check if all objects were added successfully
-            if not failed_objects:
+            # Check if we added all objects
+            if success_count > 0:
                 self.get_logger().info(
-                    f"All {len(successful_objects)} objects added successfully"
+                    f"Successfully added {success_count} objects to planning scene"
                 )
                 return True
             else:
-                self.get_logger().error(
-                    f"Failed to add {len(failed_objects)} objects: {failed_objects}"
-                )
-                self.get_logger().info(
-                    f"Successfully added {len(successful_objects)} objects: {successful_objects}"
-                )
+                self.get_logger().error("No valid objects added to planning scene")
                 return False
 
         except Exception as e:
             self.get_logger().error(f"Error adding objects to planning scene: {str(e)}")
             return False
+
+    def _create_mesh_collision_object(self, name, mesh_path, pose, frame_id="world"):
+        """Create a collision object from a mesh file with better error handling."""
+        try:
+            # Create the collision object
+            co = CollisionObject()
+            co.id = name
+            co.header.frame_id = frame_id
+            co.header.stamp = self.get_clock().now().to_msg()
+
+            # Load the mesh
+            with pyassimp.load(mesh_path) as scene:
+                if not scene.meshes:
+                    self.get_logger().error(f"No meshes found in {mesh_path}")
+                    return None
+
+                mesh = Mesh()
+                # Add triangles
+                for face in scene.meshes[0].faces:
+                    triangle = MeshTriangle()
+                    if hasattr(face, "indices"):
+                        if len(face.indices) == 3:
+                            triangle.vertex_indices = [
+                                face.indices[0],
+                                face.indices[1],
+                                face.indices[2],
+                            ]
+                            mesh.triangles.append(triangle)
+                    else:
+                        if len(face) == 3:
+                            triangle.vertex_indices = [face[0], face[1], face[2]]
+                            mesh.triangles.append(triangle)
+
+                # Add vertices
+                for vertex in scene.meshes[0].vertices:
+                    point = Point()
+                    point.x = float(vertex[0])
+                    point.y = float(vertex[1])
+                    point.z = float(vertex[2])
+                    mesh.vertices.append(point)
+
+            # Add the mesh to the collision object
+            co.meshes.append(mesh)
+            co.mesh_poses.append(pose)
+            co.operation = CollisionObject.ADD
+
+            return co
+
+        except Exception as e:
+            self.get_logger().error(f"Error creating collision object {name}: {str(e)}")
+            return None
 
     def _add_model_to_planning_scene(
         self, name: str, mesh_file: str, model_pose: Pose, frame_id="world"
@@ -880,10 +896,7 @@ class RobotController(Node):
         self._right_bins_parts = msg.part_poses
         self._right_bins_camera_pose = msg.sensor_pose
 
-    def get_planning_scene_msg(self, msg: PlanningScene):
-        self.planning_scene_msg = msg
-
-    def set_floor_robot_gripper_state(self, state):
+    def _set_floor_robot_gripper_state(self, state):
         """Optimized gripper state control with faster response handling"""
         if self._floor_robot_gripper_state.enabled == state:
             self.get_logger().debug(f"Gripper is already {self._gripper_states[state]}")
@@ -896,8 +909,10 @@ class RobotController(Node):
         self._pending_gripper_state = state
 
         # Log at debug level instead of info
-        self.get_logger().debug(f"Changing gripper state to {self._gripper_states[state]}")
-        
+        self.get_logger().debug(
+            f"Changing gripper state to {self._gripper_states[state]}"
+        )
+
         # Use call_async with a callback
         future = self._floor_gripper_enable.call_async(request)
         future.add_done_callback(self._gripper_state_callback)
@@ -928,7 +943,7 @@ class RobotController(Node):
     ):
         """
         Move the floor robot along a Cartesian path with optimized speed.
-        
+
         Args:
             waypoints: List of waypoint poses
             velocity: Maximum velocity scaling factor (0.0-1.0)
@@ -938,16 +953,16 @@ class RobotController(Node):
         # Increase default velocity and acceleration for faster movement
         velocity = max(0.5, velocity)  # Minimum velocity scaling of 0.5
         acceleration = max(0.5, acceleration)  # Minimum acceleration scaling of 0.5
-        
+
         # Get the trajectory
         trajectory_msg = self._call_get_cartesian_path(
             waypoints, velocity, acceleration, avoid_collision, "floor_robot"
         )
-        
+
         if trajectory_msg is None:
             self.get_logger().error("Failed to compute cartesian path")
             return False
-        
+
         # Execute the trajectory
         with self._planning_scene_monitor.read_write() as scene:
             trajectory = RobotTrajectory(self._ariac_robots.get_robot_model())
@@ -1017,9 +1032,6 @@ class RobotController(Node):
         if robot == "floor_robot":
             request.group_name = "floor_robot"
             request.link_name = "floor_gripper"
-        else:
-            request.group_name = "ceiling_robot"
-            request.link_name = "ceiling_gripper"
 
         # Always use higher velocity values for faster motion
         request.waypoints = waypoints
@@ -1066,11 +1078,11 @@ class RobotController(Node):
         """Optimized helper function to plan and execute a motion."""
         # plan to goal
         logger.debug("Planning trajectory")  # Change to debug level
-        
+
         # Timing for performance monitoring
         plan_start = time.time()
-        
-        # Plan the motion - instead of trying to set parameters directly, 
+
+        # Plan the motion - instead of trying to set parameters directly,
         # we'll use the existing planning functionality with default parameters
         if multi_plan_parameters is not None:
             plan_result = planning_component.plan(
@@ -1083,7 +1095,7 @@ class RobotController(Node):
         else:
             # Use default planning with no special parameters
             plan_result = planning_component.plan()
-        
+
         plan_time = time.time() - plan_start
         logger.debug(f"Planning took {plan_time:.3f} seconds")
 
@@ -1091,32 +1103,29 @@ class RobotController(Node):
         if plan_result:
             logger.debug("Executing plan")  # Change to debug level
             exec_start = time.time()
-            
+
             with self._planning_scene_monitor.read_write() as scene:
                 scene.current_state.update(True)
                 self._ariac_robots_state = scene.current_state
                 robot_trajectory = plan_result.trajectory
-                
+
             # Execute with appropriate controllers
             robot.execute(
                 robot_trajectory,
-                controllers=["floor_robot_controller", "linear_rail_controller"]
-                if robot_type == "floor_robot"
-                else ["ceiling_robot_controller", "gantry_controller"],
+                controllers=["floor_robot_controller", "linear_rail_controller"],
             )
-            
+
             exec_time = time.time() - exec_start
             logger.debug(f"Execution took {exec_time:.3f} seconds")
-            
+
             # Skip unnecessary sleep
             if sleep_time > 0:
                 time.sleep(sleep_time)
-                
+
             return True
         else:
             logger.error("Planning failed")
             return False
-        
 
     def _move_floor_robot_to_pose(self, pose: Pose):
         """Move the floor robot to a pose in Cartesian space.
@@ -1154,54 +1163,55 @@ class RobotController(Node):
         self.get_logger().error(f"Failed to move to pose after {max_attempts} attempts")
         return False
 
-    
     def _floor_robot_wait_for_attach(self, timeout: float, orientation: Quaternion):
         """More efficient wait for attachment with fewer intermediate moves"""
         with self._planning_scene_monitor.read_write() as scene:
             current_pose = scene.current_state.get_pose("floor_gripper")
-        
+
         start_time = time.time()
         retry_count = 0
         max_retries = 10
-        
+
         # First try waiting a short time for attachment without moving
         time.sleep(0.1)
         if self._floor_robot_gripper_state.attached:
             self.get_logger().info("Part attached on first attempt")
             return True
-        
+
         # while not self._floor_robot_gripper_state.attached and retry_count < max_retries:
-        while not self._floor_robot_gripper_state.attached and retry_count < max_retries:
+        while (
+            not self._floor_robot_gripper_state.attached and retry_count < max_retries
+        ):
             # Move down in larger increments for faster operation
             # z_offset = -0.002 * (retry_count + 1)  # Progressive larger movements
             z_offset = -0.001
-            
+
             current_pose = build_pose(
                 current_pose.position.x,
                 current_pose.position.y,
                 current_pose.position.z + z_offset,
                 orientation,
             )
-            
+
             waypoints = [current_pose]
             self._move_floor_robot_cartesian(waypoints, 0.1, 0.1, False)
-            
+
             # Check if attached after movement
-            time.sleep(0.4)  # Short wait 
-            
+            time.sleep(0.4)  # Short wait
+
             retry_count += 1
-            
+
             if time.time() - start_time >= timeout:
                 self.get_logger().error("Unable to pick up part: timeout")
                 raise Error("Gripper attachment timeout")
-        
+
         if not self._floor_robot_gripper_state.attached:
             self.get_logger().error("Unable to pick up part: max retries reached")
             raise Error("Gripper attachment failed after max retries")
-            
+
         self.get_logger().info(f"Part attached after {retry_count} attempts")
         return True
-    
+
     def _create_floor_joint_position_state(self, joint_positions: list) -> dict:
         """Create a dictionary of joint positions for the floor robot.
 
@@ -1293,13 +1303,6 @@ class RobotController(Node):
                 o.link_name = "floor_gripper"
                 # Add touch links - links that are allowed to touch the attached object
                 o.touch_links = ["floor_gripper", "floor_tool0", "floor_wrist_3_link"]
-            else:
-                o.link_name = "ceiling_gripper"
-                o.touch_links = [
-                    "ceiling_gripper",
-                    "ceiling_tool0",
-                    "ceiling_wrist_3_link",
-                ]
 
             # Fix the frame ID - use world frame for consistent positioning
             o.object.header.frame_id = "world"
@@ -1313,16 +1316,16 @@ class RobotController(Node):
             self.get_logger().error(f"Error creating attached mesh: {str(e)}")
             return None
 
-    def apply_planning_scene(self, scene):
-        """Apply a planning scene to the MoveIt planning scene."""
+    def _apply_planning_scene(self, scene):
+        """Apply a planning scene with better timeout handling."""
         try:
             # Create a client for the service
             apply_planning_scene_client = self.create_client(
                 ApplyPlanningScene, "/apply_planning_scene"
             )
 
-            # Wait for service to be available
-            if not apply_planning_scene_client.wait_for_service(timeout_sec=2.0):
+            # Wait for service to be available with reduced timeout
+            if not apply_planning_scene_client.wait_for_service(timeout_sec=1.0):
                 self.get_logger().error("'/apply_planning_scene' service not available")
                 return False
 
@@ -1330,28 +1333,23 @@ class RobotController(Node):
             request = ApplyPlanningScene.Request()
             request.scene = scene
 
-            # Log for debugging
-            self.get_logger().debug(
-                f"Sending planning scene with {len(scene.robot_state.attached_collision_objects)} attached objects"
-            )
-
             # Send the request
             future = apply_planning_scene_client.call_async(request)
 
-            # Wait for the response with timeout
-            timeout_sec = 2.0
+            # Wait for the response with shorter timeout
+            timeout_sec = 1.0  # Reduced timeout
             start_time = time.time()
 
             while not future.done():
-                # Short sleep to prevent CPU thrashing
-                time.sleep(0.02)
+                time.sleep(0.01)  # Shorter sleep interval
 
-                # Check for timeout
                 if time.time() - start_time > timeout_sec:
-                    self.get_logger().error(
-                        "Timeout waiting for planning scene service"
+                    self.get_logger().warn(
+                        "Timeout waiting for planning scene service, trying direct publish instead"
                     )
-                    return False
+                    # Try direct publishing as a fallback
+                    self._direct_publish_planning_scene(scene)
+                    return True  # Assume success with direct publishing
 
             # Process the result
             result = future.result()
@@ -1360,57 +1358,50 @@ class RobotController(Node):
                 return True
             else:
                 self.get_logger().warn(
-                    f"Failed to apply planning scene: {result.message if hasattr(result, 'message') else 'unknown error'}"
+                    "Failed to apply planning scene via service, trying direct publish"
                 )
-                return False
+                # Try direct publishing as a fallback
+                self._direct_publish_planning_scene(scene)
+                return True
 
         except Exception as e:
             self.get_logger().error(f"Error applying planning scene: {str(e)}")
-            return False
-
-    def debug_planning_scene(self):
-        """
-        Print debug information about the current planning scene.
-        Only call this when debugging visualization issues.
-        """
-        with self._planning_scene_monitor.read_write() as scene:
-            # Get attached objects
-            attached_bodies = []
+            # Try direct publishing as a fallback
             try:
-                attached_bodies = scene.current_state.attached_bodies
-            except AttributeError:
-                self.get_logger().warn("Could not access attached_bodies")
-            
-            # Get world objects
-            world_objects = []
-            try:
-                world = scene.get_world()
-                if hasattr(world, "collision_objects"):
-                    world_objects = world.collision_objects
-            except AttributeError:
-                self.get_logger().warn("Could not access world collision objects")
-            
-            # Log the results
-            self.get_logger().info(f"Attached objects: {len(attached_bodies)}")
-            for i, obj in enumerate(attached_bodies):
-                if hasattr(obj, "name"):
-                    self.get_logger().info(f"  {i+1}. {obj.name}")
-                else:
-                    self.get_logger().info(f"  {i+1}. (unnamed)")
-            
-            self.get_logger().info(f"World objects: {len(world_objects)}")
-            for i, obj in enumerate(world_objects):
-                if hasattr(obj, "id"):
-                    self.get_logger().info(f"  {i+1}. {obj.id}")
-                else:
-                    self.get_logger().info(f"  {i+1}. (unnamed)")
+                self._direct_publish_planning_scene(scene)
+                return True
+            except Exception as e2:
+                self.get_logger().error(f"Direct publishing also failed: {str(e2)}")
+                return False
 
-    def refresh_planning_scene_display(self):
+    def _direct_publish_planning_scene(self, scene):
+        """Publish planning scene directly to the planning scene topic."""
+        if not hasattr(self, "_planning_scene_publisher"):
+            self._planning_scene_publisher = self.create_publisher(
+                PlanningScene, "/planning_scene", 10
+            )
+            # Short delay to allow publisher to initialize
+            time.sleep(0.1)
+
+        # Set is_diff flag for proper scene update
+        scene.is_diff = True
+
+        # Publish the scene
+        self._planning_scene_publisher.publish(scene)
+
+        # Give some time for the planning scene to be processed
+        time.sleep(0.1)
+
+        self.get_logger().info(
+            f"Directly published planning scene with {len(scene.world.collision_objects)} objects"
+        )
+
+    def _refresh_planning_scene_display(self):
         """Force a refresh of the planning scene display in RViz."""
         # Create an empty diff planning scene just to trigger a display update
         refresh_scene = PlanningScene()
         refresh_scene.is_diff = True
-        self.apply_planning_scene(refresh_scene)
+        self._apply_planning_scene(refresh_scene)
 
     def _remove_model_from_floor_gripper(self):
         self.get_logger().info("Removing attached part from floor gripper")
@@ -1419,7 +1410,7 @@ class RobotController(Node):
             temp_scene.world.collision_objects = self._world_collision_objects
             temp_scene.robot_state = robotStateToRobotStateMsg(scene.current_state)
             temp_scene.robot_state.attached_collision_objects.clear()
-            self.apply_planning_scene(temp_scene)
+            self._apply_planning_scene(temp_scene)
             scene.current_state.update()
             self._ariac_robots_state = scene.current_state
 
@@ -1436,7 +1427,7 @@ class RobotController(Node):
             # Create a new robot state for the goal
             goal_state = copy(scene.current_state)
             # Set the joint positions on the goal state
-            goal_state.joint_positions = self.floor_position_dict[position_name]
+            goal_state.joint_positions = self._floor_position_dict[position_name]
 
             # Create a joint constraint for the motion plan
             joint_constraint = construct_joint_constraint(
@@ -1455,13 +1446,12 @@ class RobotController(Node):
             self._floor_robot,
             self.get_logger(),
             robot_type="floor_robot",
-            sleep_time=0.0  # No sleep after execution
+            sleep_time=0.0,  # No sleep after execution
         )
-        
+
         return success
 
-
-    def floor_robot_pick_bin_part(self, part_to_pick: PartMsg):
+    def _floor_robot_pick_bin_part(self, part_to_pick: PartMsg):
         """
         Pick a part from a bin using Cartesian space programming with improved speed.
         """
@@ -1491,8 +1481,10 @@ class RobotController(Node):
         # Optimized search
         for i in range(2):
             for part in search_order[i]:
-                if (part.part.type == part_to_pick.type and 
-                    part.part.color == part_to_pick.color):
+                if (
+                    part.part.type == part_to_pick.type
+                    and part.part.color == part_to_pick.color
+                ):
                     part_pose = multiply_pose(camera_poses[i], part.pose)
                     found_part = True
                     bin_side = bin_sides[i]
@@ -1510,7 +1502,7 @@ class RobotController(Node):
         if self._floor_robot_gripper_state.type != "part_gripper":
             # Determine which tool changer station to use
             station = "kts1" if part_pose.position.y < 0 else "kts2"
-            
+
             # Move to the tool changer and change gripper
             self._move_floor_robot_to_joint_position(f"floor_{station}_js_")
             self._floor_robot_change_gripper(station, "parts")
@@ -1539,8 +1531,9 @@ class RobotController(Node):
                 part_pose.position.x,
                 part_pose.position.y,
                 # Optimize height for better first-attempt success
-                part_pose.position.z + 
-                RobotController._part_heights[part_to_pick.type] + 0.005,
+                part_pose.position.z
+                + RobotController._part_heights[part_to_pick.type]
+                + 0.005,
                 gripper_orientation,
             )
         ]
@@ -1548,14 +1541,16 @@ class RobotController(Node):
         self._move_floor_robot_cartesian(waypoints, 0.3, 0.3, False)
 
         # Enable gripper with less waiting
-        self.set_floor_robot_gripper_state(True)
-        
+        self._set_floor_robot_gripper_state(True)
+
         # More efficient attachment process with shorter timeout
         try:
-            self._floor_robot_wait_for_attach(10.0, gripper_orientation)  # Reduced timeout
+            self._floor_robot_wait_for_attach(
+                10.0, gripper_orientation
+            )  # Reduced timeout
         except Error as e:
             self.get_logger().error(f"Attachment failed: {str(e)}")
-            
+
             # Quick recovery
             waypoints = [
                 build_pose(
@@ -1565,8 +1560,10 @@ class RobotController(Node):
                     gripper_orientation,
                 )
             ]
-            self._move_floor_robot_cartesian(waypoints, 0.5, 0.5, False)  # Faster retreat
-            self.set_floor_robot_gripper_state(False)
+            self._move_floor_robot_cartesian(
+                waypoints, 0.5, 0.5, False
+            )  # Faster retreat
+            self._set_floor_robot_gripper_state(False)
             return False
 
         # RETREAT PHASE - Faster retreat
@@ -1587,7 +1584,7 @@ class RobotController(Node):
         # SCENE UPDATE PHASE - Minimal planning scene updates
         # Just record the attached part internally for tracking
         self._floor_robot_attached_part_ = part_to_pick
-        
+
         # Only update planning scene if needed
         self._attach_model_to_floor_gripper(part_to_pick, part_pose)
 
@@ -1596,54 +1593,56 @@ class RobotController(Node):
     def _attach_model_to_floor_gripper(self, part_to_pick: PartMsg, part_pose: Pose):
         """
         Attach a part to the floor gripper in the planning scene efficiently.
-        
+
         This implementation is optimized for speed, with options for debugging.
         """
         # Create a part name based on its color and type
         part_name = (
-            self._part_colors[part_to_pick.color] 
-            + "_" 
+            self._part_colors[part_to_pick.color]
+            + "_"
             + self._part_types[part_to_pick.type]
         )
-        
+
         # Always track the part internally for collision awareness
         self._floor_robot_attached_part_ = part_to_pick
-        
+
         # Check if we're using simplified mode for speed
         debug_mode = False  # Set this to True only when debugging visualization
-        
+
         if not debug_mode:
             # Fast path - just track the part without scene updates
-            self.get_logger().info(f"Tracking attached part: {part_name} (simplified for speed)")
+            self.get_logger().info(
+                f"Tracking attached part: {part_name} (simplified for speed)"
+            )
             return True
-        
+
         # Full planning scene update path (for debugging visualization)
         self.get_logger().info(f"Attaching {part_name} to floor gripper (full update)")
-        
+
         # Get the path to the mesh file for the part
         model_path = self._mesh_file_path + self._part_types[part_to_pick.type] + ".stl"
-        
+
         if not path.exists(model_path):
             self.get_logger().error(f"Mesh file not found: {model_path}")
             return False
-        
+
         try:
             # Create a planning scene message for the update
             planning_scene = PlanningScene()
             planning_scene.is_diff = True
-            
+
             # Create the collision object
             co = CollisionObject()
             co.id = part_name
             co.header.frame_id = "world"
             co.header.stamp = self.get_clock().now().to_msg()
-            
+
             # Create the mesh from the file
             with pyassimp.load(model_path) as scene:
                 if not scene.meshes:
                     self.get_logger().error(f"No meshes found in {model_path}")
                     return False
-                    
+
                 mesh = Mesh()
                 # Add triangles
                 for face in scene.meshes[0].faces:
@@ -1653,14 +1652,14 @@ class RobotController(Node):
                             triangle.vertex_indices = [
                                 face.indices[0],
                                 face.indices[1],
-                                face.indices[2]
+                                face.indices[2],
                             ]
                             mesh.triangles.append(triangle)
                     else:
                         if len(face) == 3:
                             triangle.vertex_indices = [face[0], face[1], face[2]]
                             mesh.triangles.append(triangle)
-                
+
                 # Add vertices
                 for vertex in scene.meshes[0].vertices:
                     point = Point()
@@ -1668,165 +1667,53 @@ class RobotController(Node):
                     point.y = float(vertex[1])
                     point.z = float(vertex[2])
                     mesh.vertices.append(point)
-            
+
             # Add the mesh to the collision object
             co.meshes.append(mesh)
             co.mesh_poses.append(part_pose)
             co.operation = CollisionObject.ADD
-            
+
             # First add the object to the world - this is important!
             planning_scene.world.collision_objects.append(co)
-            
+
             # Apply this first update to ensure the object exists in the world
-            self.apply_planning_scene(planning_scene)
-            
+            self._apply_planning_scene(planning_scene)
+
             # Now create an attached collision object
             aco = AttachedCollisionObject()
             aco.link_name = "floor_gripper"
             aco.object = co
             aco.object.operation = CollisionObject.ADD
             aco.touch_links = ["floor_gripper", "floor_tool0", "floor_wrist_3_link"]
-            
+
             # Create a new planning scene message for the attachment
             attach_scene = PlanningScene()
             attach_scene.is_diff = True
             attach_scene.robot_state.attached_collision_objects.append(aco)
-            
+
             # Now the crucial part - remove the object from the world since it's attached
             remove_co = CollisionObject()
             remove_co.id = part_name
             remove_co.operation = CollisionObject.REMOVE
             attach_scene.world.collision_objects.append(remove_co)
-            
+
             # Apply the attachment
-            success = self.apply_planning_scene(attach_scene)
-            
+            success = self._apply_planning_scene(attach_scene)
+
             if success:
-                self.get_logger().info(f"Successfully attached {part_name} to floor gripper")
+                self.get_logger().info(
+                    f"Successfully attached {part_name} to floor gripper"
+                )
                 return True
             else:
-                self.get_logger().error(f"Failed to attach {part_name} to floor gripper")
+                self.get_logger().error(
+                    f"Failed to attach {part_name} to floor gripper"
+                )
                 return False
-                
+
         except Exception as e:
             self.get_logger().error(f"Error attaching model to gripper: {str(e)}")
             return False
-
-    # def _attach_model_to_floor_gripper(self, part_to_pick: PartMsg, part_pose: Pose):
-    #     """Attach a part to the floor gripper in the planning scene."""
-    #     part_name = (
-    #         self._part_colors[part_to_pick.color]
-    #         + "_"
-    #         + self._part_types[part_to_pick.type]
-    #     )
-
-    #     self.get_logger().info(f"Attaching {part_name} to floor gripper")
-
-    #     # Get the path to the mesh file for the part
-    #     model_path = self._mesh_file_path + self._part_types[part_to_pick.type] + ".stl"
-
-    #     try:
-    #         # First approach: Use the planning scene monitor directly
-    #         with self._planning_scene_monitor.read_write() as scene:
-    #             # Create the collision object for the part
-    #             co = CollisionObject()
-    #             co.id = part_name
-    #             co.header.frame_id = "world"
-
-    #             # Load the mesh
-    #             with pyassimp.load(model_path) as scene_obj:
-    #                 if not scene_obj.meshes:
-    #                     self.get_logger().error(f"No meshes found in {model_path}")
-    #                     return False
-
-    #                 mesh = Mesh()
-    #                 # Create triangles
-    #                 for face in scene_obj.meshes[0].faces:
-    #                     triangle = MeshTriangle()
-    #                     if hasattr(face, "indices"):
-    #                         if len(face.indices) == 3:
-    #                             triangle.vertex_indices = [
-    #                                 face.indices[0],
-    #                                 face.indices[1],
-    #                                 face.indices[2]
-    #                             ]
-    #                             mesh.triangles.append(triangle)
-    #                     else:
-    #                         if len(face) == 3:
-    #                             triangle.vertex_indices = [face[0], face[1], face[2]]
-    #                             mesh.triangles.append(triangle)
-
-    #                 # Create vertices
-    #                 for vertex in scene_obj.meshes[0].vertices:
-    #                     point = Point()
-    #                     point.x = float(vertex[0])
-    #                     point.y = float(vertex[1])
-    #                     point.z = float(vertex[2])
-    #                     mesh.vertices.append(point)
-
-    #             # Add the mesh to the collision object
-    #             co.meshes.append(mesh)
-    #             co.mesh_poses.append(part_pose)
-    #             co.operation = CollisionObject.ADD
-
-    #             # Apply the collision object
-    #             scene.apply_collision_object(co)
-
-    #             # Attach the object to the robot
-    #             robot_state = scene.current_state
-    #             robot_state.attachBody(
-    #                 part_name,
-    #                 "floor_gripper",
-    #                 ["floor_gripper", "floor_tool0", "floor_wrist_3_link"]
-    #             )
-
-    #             # Update the scene
-    #             scene.current_state.update()
-    #             self._ariac_robots_state = scene.current_state
-    #             self.get_logger().info(f"Successfully attached {part_name} to floor gripper")
-    #             return True
-
-    #     except Exception as e:
-    #         self.get_logger().error(f"Error attaching model to gripper: {str(e)}")
-
-    #         # Try alternative approach using the planning scene interface
-    #         try:
-    #             self.get_logger().info(f"Trying alternative approach to attach {part_name}")
-    #             # Create a new planning scene message
-    #             scene_msg = PlanningScene()
-    #             scene_msg.is_diff = True
-
-    #             # Create the attached collision object
-    #             aco = AttachedCollisionObject()
-    #             aco.link_name = "floor_gripper"
-    #             aco.object.header.frame_id = "floor_gripper"
-    #             aco.object.id = part_name
-
-    #             # Load the mesh
-    #             with pyassimp.load(model_path) as scene_obj:
-    #                 # ... (mesh creation code as above)
-    #                 # ...
-
-    #             aco.object.meshes.append(mesh)
-    #             aco.object.mesh_poses.append(part_pose)
-    #             aco.object.operation = CollisionObject.ADD
-    #             aco.touch_links = ["floor_gripper", "floor_tool0", "floor_wrist_3_link"]
-
-    #             # Add to the scene message
-    #             scene_msg.robot_state.attached_collision_objects.append(aco)
-
-    #             # Apply the scene using the service
-    #             success = self.apply_planning_scene(scene_msg)
-    #             if success:
-    #                 self.get_logger().info(f"Successfully attached {part_name} using alternative method")
-    #                 return True
-    #             else:
-    #                 self.get_logger().error("Failed to attach part using alternative method")
-    #                 return False
-
-    #         except Exception as nested_e:
-    #             self.get_logger().error(f"Both attachment methods failed: {str(nested_e)}")
-    #             return False
 
     def _floor_robot_change_gripper(self, station: str, gripper_type: str):
         """Change the gripper on the floor robot.
@@ -1935,13 +1822,13 @@ class RobotController(Node):
 
         # Wait for transform to be available
         try:
-            self.tf_buffer.wait_for_transform_async(
+            self._tf_buffer.wait_for_transform_async(
                 "world",
                 frame_id,
                 rclpy.time.Time(),
                 rclpy.duration.Duration(seconds=2.0),
             )
-            t = self.tf_buffer.lookup_transform("world", frame_id, rclpy.time.Time())
+            t = self._tf_buffer.lookup_transform("world", frame_id, rclpy.time.Time())
         except Exception as e:
             self.get_logger().error(f"Failed to get transform for {frame_id}: {str(e)}")
             raise
