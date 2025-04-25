@@ -1,5 +1,25 @@
 # Lecture 9 - Robot Movement Methods
 
+```bash
+colcon
+cd <workspace>
+rosdep install --from-paths src -y --ignore-src
+pip install -r <path to requirements.txt>
+colcon build 
+source install/setup.bash
+```
+
+Start the environment:
+```bash
+ros2 launch ariac_gazebo ariac.launch.py competitor_pkg:=moveit_demo trial_name:=kitting dev_mode:=True
+```
+Start the demo:
+
+```bash
+ros2 launch moveit_demo controller_demo.launch.py rviz:=true
+```
+The floor robot should pick up a purple pump.
+
 ## 1. `_move_floor_robot_cartesian`
 
 This method moves the floor robot along a Cartesian path with specific velocity and acceleration controls.
