@@ -21,6 +21,43 @@ The floor robot should pick up a purple pump.
 
 ## Relevant Methods 
 
+### 1. `_control_cb`
+
+This method runs in a timer to orchestrate the whole node. The following lines have been commented out. Uncommenting them will make the robot reach different pre-defined locations using joint-space programming.
+
+#### Join-Space Programming
+```python
+# Go to different locations using joint-space programming
+# self._move_floor_robot_to_joint_position('left_bins')
+# self._move_floor_robot_to_joint_position('right_bins')
+# self._move_floor_robot_to_joint_position("agv1")
+# self._move_floor_robot_to_joint_position("agv2")
+# self._move_floor_robot_to_joint_position("agv3")
+# self._move_floor_robot_to_joint_position("agv4")
+```
+
+#### Picking Up a Part
+
+Initially, the code specifies the target part for the robot (a purple pump). Subsequently, it commands the floor robot to find and pick up this designated part. Because the `_control_cb` function is executed periodically by a timer, a state machine pattern—implemented with the conditions `if not self._part_already_picked_up` and the assignment `self._part_already_picked_up = True`—is used. This prevents the robot from repeatedly attempting to pick up another purple pump in subsequent executions of the timer callback.
+
+```python
+# Pick up a part from a bin
+if not self._part_already_picked_up:
+    part_to_pick = PartMsg()
+    part_to_pick.color = PartMsg.PURPLE
+    part_to_pick.type = PartMsg.PUMP
+
+    success = self._floor_robot_pick_bin_part(part_to_pick)
+    
+    if success:
+        self._part_already_picked_up = True
+        self.get_logger().info("Successfully picked up part")
+        # Force refresh the planning scene visualization
+        self._refresh_planning_scene_display()
+    else:
+        self.get_logger().warn("Failed to pick up part, will retry later")
+```
+
 ### 1. `_move_floor_robot_cartesian`
 
 This method moves the floor robot along a Cartesian path with specific velocity and acceleration controls.

@@ -401,7 +401,8 @@ class RobotController(Node):
                 self._refresh_planning_scene_display()
             else:
                 self.get_logger().warn("Failed to pick up part, will retry later")
-
+            
+  
         # We are done, stop the competitionn
         self._end_competition()
 

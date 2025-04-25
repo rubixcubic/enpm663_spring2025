@@ -1,0 +1,42 @@
+name: Generate and Deploy Documentation
+
+on:
+  push:
+  branches:
+  - main
+
+jobs:
+  build-and-deploy-docs:
+  runs-on: ubuntu-latest
+
+  steps:
+  - name: Checkout code
+  uses: actions/checkout@v4
+  with:
+  fetch-depth: 0 # Crucial for getting all commits
+
+  - name: Set up Python
+  uses: actions/setup-python@v5
+  with:
+  python-version: '3.10' # Or your desired Python version
+
+  - name: Install dependencies
+  run: |
+  python -m pip install --upgrade pip
+  python -m pip install sphinx sphinx-rtd-theme # Or your chosen tools
+  # If you have specific requirements.txt, you can use:
+  # python -m pip install -r requirements.txt
+
+  - name: Generate Documentation
+  run: |
+  cd docs # Assuming your Sphinx conf.py is in a 'docs' directory
+  make clean html
+  # For pdoc, you might use something like:
+  # python -m pdoc --html --output-dir ../docs/output my_package
+
+  - name: Deploy to GitHub Pages
+  uses: JamesIves/github-pages-deploy-action@v4
+  with:
+  folder: docs/_build/html # Or the output directory of your docs
+  branch: gh-pages
+  clean: true # Remove previous files
