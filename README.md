@@ -1,4 +1,4 @@
-# Lecture 9 - Robot Movement Methods
+# Lecture 9 - Motion Planning
 
 ```bash
 cd <workspace>
