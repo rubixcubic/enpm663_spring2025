@@ -8,7 +8,7 @@ from launch.actions import (
 )
 
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, LaunchConfigurationEquals
 from launch_ros.actions import Node
 from launch.substitutions import PathJoinSubstitution, LaunchConfiguration
 
@@ -22,6 +22,10 @@ def launch_setup(context, *args, **kwargs):
     # Create parameters dictionary
     parameters = {"use_sim_time": True}
     parameters["use_moveit"] = True
+
+    # Get the operation mode from launch configuration
+    operation_mode = LaunchConfiguration("operation_mode").perform(context)
+    parameters["operation_mode"] = operation_mode
 
     urdf = os.path.join(
         get_package_share_directory("ariac_description"),
@@ -48,15 +52,33 @@ def launch_setup(context, *args, **kwargs):
     )
 
     start_rviz = LaunchConfiguration("rviz")
+    program_choice = LaunchConfiguration("program")
 
     parameters.update(moveit_config.to_dict())
 
-    # Tutorial Node
-    moveit_demo_node = Node(
+    # Tutorial Nodes with conditional execution based on program choice
+    moveit_demo_node_py = Node(
         package="moveit_demo",
         executable="minimal_demo.py",
         output="screen",
         parameters=[parameters],
+        condition=LaunchConfigurationEquals("program", "python"),
+    )
+    
+    moveit_demo_node_cpp = Node(
+        package="moveit_demo",
+        executable="moveit_demo_cpp",
+        output="screen",
+        parameters=[
+            moveit_config.robot_description,
+            moveit_config.robot_description_semantic,
+            moveit_config.robot_description_kinematics,
+            moveit_config.joint_limits,
+            {"use_sim_time": True},
+            {"operation_mode": operation_mode}  # Pass operation mode to C++ node
+        ],
+        arguments=['--ros-args', '--log-level', 'move_group_interface:=warn', '--log-level', 'moveit_trajectory_processing.time_optimal_trajectory_generation:=error'],
+        condition=LaunchConfigurationEquals("program", "cpp"),
     )
 
     # RViz Node
@@ -89,7 +111,8 @@ def launch_setup(context, *args, **kwargs):
     )
 
     nodes_to_start = [
-        moveit_demo_node,
+        moveit_demo_node_cpp,
+        moveit_demo_node_py,
         move_group,
         rviz_node
     ]
@@ -105,6 +128,23 @@ def generate_launch_description():
             "rviz",
             default_value="false",
             description="Launch RViz visualization?",
+        )
+    )
+    
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "program",
+            default_value="python",
+            description="Choose which program implementation to run. Options: 'python' or 'cpp'",
+        )
+    )
+    
+    # Add new argument for operation mode
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "operation_mode",
+            default_value="pick_place_tray",
+            description="Choose operation mode. Options: 'pick_place_tray' or 'pick_place_part'",
         )
     )
 
