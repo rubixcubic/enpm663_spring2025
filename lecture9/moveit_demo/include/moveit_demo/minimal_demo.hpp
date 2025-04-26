@@ -50,14 +50,68 @@
 
 #include <geometry_msgs/msg/pose.hpp>
 
+/**
+ * @brief Picks up a kit tray from a kitting tray station and places it on an AGV
+ *
+ * This function handles the complete workflow for picking a kit tray from either kitting station
+ * and placing it on the specified AGV. The process includes:
+ * - Locating the tray on either KTS1 or KTS2 stations
+ * - Moving the floor robot to the appropriate station
+ * - Ensuring the correct gripper is attached
+ * - Picking up the tray with adaptive grasping strategies
+ * - Transporting the tray to the AGV
+ * - Precise placement of the tray on the AGV
+ * - Locking the tray to the AGV
+ *
+ * The function implements a multi-stage approach for both pickup and placement with
+ * several error recovery mechanisms to handle potential failures.
+ *
+ * @param tray_id The ID of the kit tray to pick up
+ * @param agv_num The AGV number (1-4) where the tray should be placed
+ *
+ * @return bool True if the operation was successful, false otherwise
+ *
+ * @throws None directly, but logs errors when encountering issues
+ *
+ * @note This function includes multiple safeguards and recovery mechanisms:
+ *   - Thread-safe access to shared tray data using mutexes
+ *   - Multi-stage approach for reliable tray pickup
+ *   - Adaptive retries if station movement fails
+ *   - Automated gripper type switching when needed
+ *   - Attachment verification using FloorRobotWaitForAttach
+ *   - Multi-stage placement with precision control
+ *   - Automatic collision avoidance through planning scene updates
+ *
+ * @warning Requires proper initialization of the robot controller and its subscribers
+ *          before execution
+ *
+ * @see FloorRobotWaitForAttach
+ * @see FloorRobotSetGripperState
+ * @see FloorRobotChangeGripper
+ * @see LockAGVTray
+ */
 class RobotController : public rclcpp::Node
 {
 public:
     /// Constructor
     RobotController();
 
+    /// Destructor
     ~RobotController();
-
+    /**
+     * @brief Adds collision models to the MoveIt planning scene
+     *
+     * Populates the planning scene with collision objects for:
+     * - Bins (bins 1-8)
+     * - Assembly stations (AS1-AS4)
+     * - Assembly station briefcases/inserts
+     * - Conveyor belt
+     * - Kit tray tables (KTS1 and KTS2)
+     *
+     * These collision objects enable path planning with collision avoidance.
+     *
+     * @return void
+     */
     void AddModelsToPlanningScene();
 
     // Floor Robot Public Functions
@@ -171,7 +225,8 @@ private:
 
     // Callback Groups
     rclcpp::CallbackGroup::SharedPtr client_cb_group_;
-    rclcpp::CallbackGroup::SharedPtr topic_cb_group_;
+    rclcpp::CallbackGroup::SharedPtr mutex_cb_group_;
+    rclcpp::CallbackGroup::SharedPtr reentrant_cb_group_;
 
     // MoveIt Interfaces
     moveit::planning_interface::MoveGroupInterface floor_robot_;
@@ -459,9 +514,15 @@ private:
     const std::string PURPLE = rgb_color(128, 0, 128);
     const std::string LIGHT_BLUE = rgb_color(173, 216, 230);
 
+    const std::string CHARM_PINK = rgb_color(235, 143, 166);
+
     rclcpp::Subscription<rcl_interfaces::msg::ParameterEvent>::SharedPtr parameter_event_sub_;
     std::string current_operation_mode_;
     bool StartOperation();
     bool ExecutePickPlacePartOperation();
     bool ExecutePickPlaceTrayOperation();
+    rclcpp::TimerBase::SharedPtr competition_timer_;
+    bool competition_started_ = false;
+    void CompetitionTimerCallback();
+    bool operation_started_{false};
 };

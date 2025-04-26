@@ -34,75 +34,80 @@ RobotController::RobotController()
     ceiling_robot_.allowReplanning(true);
     ceiling_robot_.setReplanAttempts(5);
     // Subscribe to topics
-    rclcpp::SubscriptionOptions options;
+    rclcpp::SubscriptionOptions mutex_options;
+    rclcpp::SubscriptionOptions reentrant_options;
 
-    topic_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-
-    options.callback_group = topic_cb_group_;
+    mutex_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    reentrant_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+    mutex_options.callback_group = mutex_cb_group_;
+    reentrant_options.callback_group = reentrant_cb_group_;
 
     orders_sub_ = this->create_subscription<ariac_msgs::msg::Order>("/ariac/orders", 1,
-                                                                    std::bind(&RobotController::TopicOrdersCallback, this, std::placeholders::_1), options);
+                                                                    std::bind(&RobotController::TopicOrdersCallback, this, std::placeholders::_1), mutex_options);
 
-    competition_state_sub_ = this->create_subscription<ariac_msgs::msg::CompetitionState>("/ariac/competition_state", 1, std::bind(&RobotController::TopicCompetitionStateCallback, this, std::placeholders::_1), options);
+    competition_state_sub_ = this->create_subscription<ariac_msgs::msg::CompetitionState>("/ariac/competition_state", 1, std::bind(&RobotController::TopicCompetitionStateCallback, this, std::placeholders::_1), mutex_options);
 
     kts1_camera_sub_ = this->create_subscription<ariac_msgs::msg::AdvancedLogicalCameraImage>(
         "/ariac/sensors/kts1_camera/image", rclcpp::SensorDataQoS(),
-        std::bind(&RobotController::kts1_camera_cb, this, std::placeholders::_1), options);
+        std::bind(&RobotController::kts1_camera_cb, this, std::placeholders::_1), reentrant_options);
 
     kts2_camera_sub_ = this->create_subscription<ariac_msgs::msg::AdvancedLogicalCameraImage>(
         "/ariac/sensors/kts2_camera/image", rclcpp::SensorDataQoS(),
-        std::bind(&RobotController::kts2_camera_cb, this, std::placeholders::_1), options);
+        std::bind(&RobotController::kts2_camera_cb, this, std::placeholders::_1), reentrant_options);
 
     left_bins_camera_sub_ = this->create_subscription<ariac_msgs::msg::AdvancedLogicalCameraImage>(
         "/ariac/sensors/left_bins_camera/image", rclcpp::SensorDataQoS(),
-        std::bind(&RobotController::left_bins_camera_cb, this, std::placeholders::_1), options);
+        std::bind(&RobotController::left_bins_camera_cb, this, std::placeholders::_1), reentrant_options);
 
     right_bins_camera_sub_ = this->create_subscription<ariac_msgs::msg::AdvancedLogicalCameraImage>(
         "/ariac/sensors/right_bins_camera/image", rclcpp::SensorDataQoS(),
-        std::bind(&RobotController::right_bins_camera_cb, this, std::placeholders::_1), options);
+        std::bind(&RobotController::right_bins_camera_cb, this, std::placeholders::_1), reentrant_options);
 
     conveyor_camera_sub_ = this->create_subscription<ariac_msgs::msg::AdvancedLogicalCameraImage>(
         "/ariac/sensors/conveyor_camera/image", rclcpp::SensorDataQoS(),
-        std::bind(&RobotController::conveyor_camera_cb, this, std::placeholders::_1), options);
+        std::bind(&RobotController::conveyor_camera_cb, this, std::placeholders::_1), reentrant_options);
 
     breakbeam_sub_ = this->create_subscription<ariac_msgs::msg::BreakBeamStatus>(
         "/ariac/sensors/conveyor_breakbeam/change", rclcpp::SensorDataQoS(),
-        std::bind(&RobotController::breakbeam_cb, this, std::placeholders::_1), options);
+        std::bind(&RobotController::breakbeam_cb, this, std::placeholders::_1), reentrant_options);
 
     conveyor_parts_sub_ = this->create_subscription<ariac_msgs::msg::ConveyorParts>(
         "/ariac/conveyor_parts", rclcpp::SensorDataQoS(),
-        std::bind(&RobotController::conveyor_parts_cb, this, std::placeholders::_1), options);
+        std::bind(&RobotController::conveyor_parts_cb, this, std::placeholders::_1), mutex_options);
 
     floor_gripper_state_sub_ = this->create_subscription<ariac_msgs::msg::VacuumGripperState>(
         "/ariac/floor_robot_gripper_state", rclcpp::SensorDataQoS(),
-        std::bind(&RobotController::floor_gripper_state_cb, this, std::placeholders::_1), options);
+        std::bind(&RobotController::floor_gripper_state_cb, this, std::placeholders::_1), reentrant_options);
 
     ceiling_gripper_state_sub_ = this->create_subscription<ariac_msgs::msg::VacuumGripperState>(
         "/ariac/ceiling_robot_gripper_state", rclcpp::SensorDataQoS(),
-        std::bind(&RobotController::ceiling_gripper_state_cb, this, std::placeholders::_1), options);
+        std::bind(&RobotController::ceiling_gripper_state_cb, this, std::placeholders::_1), reentrant_options);
 
     agv1_status_sub_ = this->create_subscription<ariac_msgs::msg::AGVStatus>(
         "/ariac/agv1_status", 10,
-        std::bind(&RobotController::agv1_status_cb, this, std::placeholders::_1), options);
+        std::bind(&RobotController::agv1_status_cb, this, std::placeholders::_1), mutex_options);
 
     agv2_status_sub_ = this->create_subscription<ariac_msgs::msg::AGVStatus>(
         "/ariac/agv2_status", 10,
-        std::bind(&RobotController::agv2_status_cb, this, std::placeholders::_1), options);
+        std::bind(&RobotController::agv2_status_cb, this, std::placeholders::_1), mutex_options);
 
     agv3_status_sub_ = this->create_subscription<ariac_msgs::msg::AGVStatus>(
         "/ariac/agv3_status", 10,
-        std::bind(&RobotController::agv3_status_cb, this, std::placeholders::_1), options);
+        std::bind(&RobotController::agv3_status_cb, this, std::placeholders::_1), mutex_options);
 
     agv4_status_sub_ = this->create_subscription<ariac_msgs::msg::AGVStatus>(
         "/ariac/agv4_status", 10,
-        std::bind(&RobotController::agv4_status_cb, this, std::placeholders::_1), options);
+        std::bind(&RobotController::agv4_status_cb, this, std::placeholders::_1), mutex_options);
 
     // Initialize service clients
     floor_robot_tool_changer_ = this->create_client<ariac_msgs::srv::ChangeGripper>("/ariac/floor_robot_change_gripper");
     floor_robot_gripper_enable_ = this->create_client<ariac_msgs::srv::VacuumGripperControl>("/ariac/floor_robot_enable_gripper");
     ceiling_robot_gripper_enable_ = this->create_client<ariac_msgs::srv::VacuumGripperControl>("/ariac/ceiling_robot_enable_gripper");
 
-    // AddModelsToPlanningScene();
+    competition_timer_ = this->create_wall_timer(
+        std::chrono::seconds(1),
+        std::bind(&RobotController::CompetitionTimerCallback, this));
+
     RCLCPP_INFO_STREAM(this->get_logger(), BOLD + ORANGE << "Initialization successful. " << RESET);
 }
 
@@ -110,6 +115,21 @@ RobotController::~RobotController()
 {
     floor_robot_.~MoveGroupInterface();
     ceiling_robot_.~MoveGroupInterface();
+}
+void RobotController::CompetitionTimerCallback()
+{
+
+    // If competition is in READY state and hasn't been started yet
+    if (competition_state_ == ariac_msgs::msg::CompetitionState::READY && !competition_started_)
+    {
+
+        if (StartCompetition())
+        {
+            RCLCPP_INFO(get_logger(), "Competition started successfully");
+            competition_started_ = true;
+
+        }
+    }
 }
 
 void RobotController::OnParameterEvent(const rcl_interfaces::msg::ParameterEvent::SharedPtr event)
@@ -142,16 +162,20 @@ void RobotController::OnParameterEvent(const rcl_interfaces::msg::ParameterEvent
 
 bool RobotController::StartOperation()
 {
-    RCLCPP_INFO_STREAM(get_logger(), "Starting operation: " << current_operation_mode_);
+    RCLCPP_INFO_STREAM(this->get_logger(), BOLD + ORANGE << "Starting operation: " << current_operation_mode_ << RESET);
+
+    AddModelsToPlanningScene();
+
 
     if (current_operation_mode_ == "pick_place_tray")
     {
-        RCLCPP_INFO(get_logger(), "Executing tray pick and place operation");
+        RCLCPP_INFO_STREAM(this->get_logger(), BOLD + ORANGE << "Executing tray pick and place operation" << RESET);
+
         return ExecutePickPlaceTrayOperation();
     }
     else if (current_operation_mode_ == "pick_place_part")
     {
-        RCLCPP_INFO(get_logger(), "Executing part pick and place operation");
+        RCLCPP_INFO_STREAM(this->get_logger(), BOLD + ORANGE << "Executing part pick and place operation" << RESET);
         return ExecutePickPlacePartOperation();
     }
     else
@@ -159,6 +183,7 @@ bool RobotController::StartOperation()
         RCLCPP_ERROR(get_logger(), "Unknown operation mode: %s", current_operation_mode_.c_str());
         return false;
     }
+    EndCompetition();
 }
 
 void RobotController::TopicOrdersCallback(
@@ -354,13 +379,16 @@ void RobotController::TopicCompetitionStateCallback(
 {
     competition_state_ = msg->competition_state;
 
-    RCLCPP_INFO_STREAM_ONCE(this->get_logger(), BOLD + ORANGE << "Competition state: "<< competition_state_ << RESET);
-
+    // RCLCPP_INFO_STREAM(this->get_logger(), BOLD + ORANGE << "Competition state: " << competition_state_ << RESET);
 
     // If competition just started, start the operation
-    if (competition_state_ == ariac_msgs::msg::CompetitionState::STARTED)
+    if (operation_started_ == true)
+        return;
+
+    if (competition_state_ == ariac_msgs::msg::CompetitionState::STARTED or competition_state_ == ariac_msgs::msg::CompetitionState::ORDER_ANNOUNCEMENTS_DONE)
     {
         StartOperation();
+        operation_started_ = true;
     }
 }
 
@@ -652,13 +680,30 @@ moveit_msgs::msg::CollisionObject RobotController::CreateCollisionObject(
 void RobotController::AddModelToPlanningScene(
     std::string name, std::string mesh_file, geometry_msgs::msg::Pose model_pose)
 {
+
     planning_scene_.applyCollisionObject(CreateCollisionObject(name, mesh_file, model_pose));
 }
 
+/**
+ * @brief Adds all required collision models to the MoveIt planning scene
+ *
+ * Initializes the planning scene with collision objects representing:
+ * - Storage bins (bins 1-8)
+ * - Assembly stations (AS1-AS4)
+ * - Assembly station inserts/briefcases
+ * - Conveyor belt
+ * - Kit tray tables (KTS1 and KTS2)
+ *
+ * This comprehensive scene enables collision-aware path planning for both robots.
+ *
+ * @return void
+ *
+ * @note If any object cannot be added, the function will log a warning but continue
+ *       with the remaining objects
+ */
 void RobotController::AddModelsToPlanningScene()
 {
-    std::vector<moveit_msgs::msg::CollisionObject> objects;
-
+    RCLCPP_INFO_STREAM(this->get_logger(), BOLD + CHARM_PINK << "Initializing planning scene with collision objects" << RESET);
     // Add bins
     std::map<std::string, std::pair<double, double>> bin_positions = {
         {"bin1", std::pair<double, double>(-1.9, 3.375)},
@@ -678,7 +723,7 @@ void RobotController::AddModelsToPlanningScene()
         bin_pose.position.z = 0;
         bin_pose.orientation = QuaternionFromRPY(0, 0, 3.14159);
 
-        objects.push_back(CreateCollisionObject(bin.first, "bin.stl", bin_pose));
+        AddModelToPlanningScene(bin.first, "bin.stl", bin_pose);
     }
 
     // Add assembly stations
@@ -697,46 +742,47 @@ void RobotController::AddModelsToPlanningScene()
         assembly_station_pose.position.z = 0;
         assembly_station_pose.orientation = QuaternionFromRPY(0, 0, 0);
 
-        objects.push_back(CreateCollisionObject(station.first, "assembly_station.stl", assembly_station_pose));
+        AddModelToPlanningScene(station.first, "assembly_station.stl", assembly_station_pose);
     }
 
     // Add assembly briefcases
-    std::map<std::string, std::pair<double, double>> assembly_insert_positions = {
-        {"as1_insert", std::pair<double, double>(-7.7, 3)},
-        {"as2_insert", std::pair<double, double>(-12.7, 3)},
-        {"as3_insert", std::pair<double, double>(-7.7, -3)},
-        {"as4_insert", std::pair<double, double>(-12.7, -3)},
-    };
+    std::map<std::string, std::string> assembly_inserts = {
+        {"as1_insert", "as1_insert_frame"},
+        {"as2_insert", "as2_insert_frame"},
+        {"as3_insert", "as3_insert_frame"},
+        {"as4_insert", "as4_insert_frame"}};
 
-    geometry_msgs::msg::Pose assembly_insert_pose;
-
-    for (auto const &insert : assembly_insert_positions)
+    for (auto const &insert : assembly_inserts)
     {
-        // assembly_insert_pose.position.x = insert.second.first;
-        // assembly_insert_pose.position.y = insert.second.second;
-        // assembly_insert_pose.position.z = 1.011;
-        // assembly_insert_pose.orientation = QuaternionFromRPY(0, 0, 0);
-
-        std::string frame_name = insert.first + "_frame";
-
-        objects.push_back(CreateCollisionObject(insert.first, "assembly_insert.stl", FrameWorldPose(frame_name)));
+        try
+        {
+            geometry_msgs::msg::Pose insert_pose = FrameWorldPose(insert.second);
+            AddModelToPlanningScene(insert.first, "assembly_insert.stl", insert_pose);
+        }
+        catch (const std::exception &e)
+        {
+            RCLCPP_WARN(get_logger(), "Failed to add assembly insert %s: %s",
+                        insert.first.c_str(), e.what());
+        }
     }
 
+    // Add conveyor
     geometry_msgs::msg::Pose conveyor_pose;
     conveyor_pose.position.x = -0.6;
     conveyor_pose.position.y = 0;
     conveyor_pose.position.z = 0;
     conveyor_pose.orientation = QuaternionFromRPY(0, 0, 0);
 
-    objects.push_back(CreateCollisionObject("conveyor", "conveyor.stl", conveyor_pose));
+    AddModelToPlanningScene("conveyor", "conveyor.stl", conveyor_pose);
 
+    // Add kit tray tables
     geometry_msgs::msg::Pose kts1_table_pose;
     kts1_table_pose.position.x = -1.3;
     kts1_table_pose.position.y = -5.84;
     kts1_table_pose.position.z = 0;
     kts1_table_pose.orientation = QuaternionFromRPY(0, 0, 3.14159);
 
-    objects.push_back(CreateCollisionObject("kts1_table", "kit_tray_table.stl", kts1_table_pose));
+    AddModelToPlanningScene("kts1_table", "kit_tray_table.stl", kts1_table_pose);
 
     geometry_msgs::msg::Pose kts2_table_pose;
     kts2_table_pose.position.x = -1.3;
@@ -744,12 +790,9 @@ void RobotController::AddModelsToPlanningScene()
     kts2_table_pose.position.z = 0;
     kts2_table_pose.orientation = QuaternionFromRPY(0, 0, 0);
 
-    objects.push_back(CreateCollisionObject("kts2_table", "kit_tray_table.stl", kts2_table_pose));
+    AddModelToPlanningScene("kts2_table", "kit_tray_table.stl", kts2_table_pose);
 
-    if (!planning_scene_.applyCollisionObjects(objects))
-    {
-        RCLCPP_WARN(get_logger(), "Unable to add objects to planning scene");
-    }
+    RCLCPP_INFO(get_logger(), "Planning scene initialization complete");
 }
 
 geometry_msgs::msg::Quaternion RobotController::SetRobotOrientation(double rotation)
@@ -954,95 +997,80 @@ std::pair<bool, moveit_msgs::msg::RobotTrajectory> RobotController::FloorRobotPl
 
 void RobotController::FloorRobotWaitForAttach(double timeout)
 {
-    // Wait for part to be attached with more efficient strategy
+    // Wait for part to be attached
     rclcpp::Time start = now();
     std::vector<geometry_msgs::msg::Pose> waypoints;
     geometry_msgs::msg::Pose starting_pose = floor_robot_.getCurrentPose().pose;
 
-    // First try waiting a short time without moving
-    rclcpp::sleep_for(std::chrono::milliseconds(200));
-    if (floor_gripper_state_.attached)
+    while (!floor_gripper_state_.attached)
     {
-        RCLCPP_INFO(get_logger(), "Part attached immediately");
-        return;
-    }
-
-    int micro_adjustment_count = 0;
-    const int max_micro_adjustments = 5;
-    double adjustment_size = 0.001; // 1mm initial adjustment
-
-    while (!floor_gripper_state_.attached && micro_adjustment_count < max_micro_adjustments)
-    {
-        micro_adjustment_count++;
-        RCLCPP_INFO(get_logger(), "Making micro-adjustment %d of %d",
-                    micro_adjustment_count, max_micro_adjustments);
+        RCLCPP_DEBUG_THROTTLE(get_logger(), *get_clock(), 1000, "Waiting for gripper attach");
 
         waypoints.clear();
-
-        // Try different adjustment strategies
-        int adjustment_type = micro_adjustment_count % 5;
-
-        if (adjustment_type == 0)
-        {
-            // Try slightly lower
-            starting_pose.position.z -= adjustment_size;
-        }
-        else if (adjustment_type == 1)
-        {
-            // Try slightly forward in x
-            starting_pose.position.x += adjustment_size;
-        }
-        else if (adjustment_type == 2)
-        {
-            // Try slightly to the side
-            starting_pose.position.y += adjustment_size;
-        }
-        else if (adjustment_type == 3)
-        {
-            // Try slightly rotated
-            tf2::Quaternion q_orig, q_rot, q_new;
-            tf2::fromMsg(starting_pose.orientation, q_orig);
-            q_rot.setRPY(0, 0, 0.02); // Small yaw adjustment
-            q_new = q_orig * q_rot;
-            q_new.normalize();
-            starting_pose.orientation = tf2::toMsg(q_new);
-        }
-        else if (adjustment_type == 4)
-        {
-            // Toggle gripper
-            FloorRobotSetGripperState(false);
-            rclcpp::sleep_for(std::chrono::milliseconds(100));
-            FloorRobotSetGripperState(true);
-            continue; // Skip the motion for this case
-        }
-
+        starting_pose.position.z -= 0.001;
         waypoints.push_back(starting_pose);
-        FloorRobotMoveCartesian(waypoints, 0.01, 0.01, false);
 
-        // Give a short time for attachment to register
-        rclcpp::sleep_for(std::chrono::milliseconds(200));
+        FloorRobotMoveCartesian(waypoints, 0.01, 0.01, true);
 
-        // Increase adjustment size for next attempt
-        adjustment_size += 0.0005; // Gradually increase to 0.0015, 0.002, etc.
+        usleep(500);
 
         if (now() - start > rclcpp::Duration::from_seconds(timeout))
         {
-            RCLCPP_ERROR(get_logger(), "Unable to pick up object: timeout");
+            RCLCPP_ERROR(get_logger(), "Unable to pick up object");
             return;
         }
     }
-
-    if (floor_gripper_state_.attached)
-    {
-        RCLCPP_INFO(get_logger(), "Successfully attached after %d micro-adjustments",
-                    micro_adjustment_count);
-    }
-    else
-    {
-        RCLCPP_ERROR(get_logger(), "Failed to attach after %d micro-adjustments",
-                     micro_adjustment_count);
-    }
 }
+
+// void RobotController::FloorRobotWaitForAttach(double timeout)
+// {
+//     // Wait for part to be attached with more efficient strategy
+//     rclcpp::Time start = now();
+//     std::vector<geometry_msgs::msg::Pose> waypoints;
+//     geometry_msgs::msg::Pose starting_pose = floor_robot_.getCurrentPose().pose;
+
+//     // First try waiting a short time without moving
+//     rclcpp::sleep_for(std::chrono::milliseconds(200));
+//     if (floor_gripper_state_.attached)
+//     {
+//         RCLCPP_INFO(get_logger(), "Part attached immediately");
+//         return;
+//     }
+
+//     int micro_adjustment_count = 0;
+//     const int max_micro_adjustments = 5;
+//     double adjustment_size = 0.001; // 1mm initial adjustment
+
+//     while (!floor_gripper_state_.attached)
+//     {
+//         waypoints.clear();
+//         waypoints.push_back(starting_pose);
+//         FloorRobotMoveCartesian(waypoints, 0.01, 0.01, false);
+
+//         // Give a short time for attachment to register
+//         rclcpp::sleep_for(std::chrono::milliseconds(200));
+
+//         // Increase adjustment size for next attempt
+//         adjustment_size += 0.0005; // Gradually increase to 0.0015, 0.002, etc.
+
+//         if (now() - start > rclcpp::Duration::from_seconds(timeout))
+//         {
+//             RCLCPP_ERROR(get_logger(), "Unable to pick up object: timeout");
+//             return;
+//         }
+//     }
+
+//     if (floor_gripper_state_.attached)
+//     {
+//         RCLCPP_INFO(get_logger(), "Successfully attached after %d micro-adjustments",
+//                     micro_adjustment_count);
+//     }
+//     else
+//     {
+//         RCLCPP_ERROR(get_logger(), "Failed to attach after %d micro-adjustments",
+//                      micro_adjustment_count);
+//     }
+// }
 
 void RobotController::FloorRobotSendHome()
 {
@@ -1175,7 +1203,7 @@ bool RobotController::FloorRobotPickandPlaceTray(int tray_id, int agv_num)
 
     double tray_rotation = GetYaw(tray_pose);
 
-    RCLCPP_INFO_STREAM(get_logger(), "Found kit tray " << tray_id << " on kitting tray station " << station << " moving to pick location");
+    RCLCPP_INFO_STREAM(get_logger(), BOLD + ORANGE << "Found kit tray " << tray_id << " on kitting tray station " << station << " moving to pick location" << RESET);
 
     // Move floor robot to the corresponding kit tray table - Use joint space motion for reliability
     if (station == "kts1")
@@ -1301,66 +1329,10 @@ bool RobotController::FloorRobotPickandPlaceTray(int tray_id, int agv_num)
     // Enable gripper with improved attachment strategy
     FloorRobotSetGripperState(true);
 
-    // Try multiple micro-adjustments if needed to get a good grasp
-    const int max_attach_attempts = 5;
-    bool grasp_success = false;
+    // Use WaitForAttach with longer timeout
+    FloorRobotWaitForAttach(15.0);
 
-    for (int attempt = 0; attempt < max_attach_attempts; attempt++)
-    {
-        // Wait briefly to see if attachment occurs
-        rclcpp::sleep_for(std::chrono::milliseconds(250));
-
-        if (floor_gripper_state_.attached)
-        {
-            grasp_success = true;
-            RCLCPP_INFO(get_logger(), "Successfully attached to tray on attempt %d", attempt + 1);
-            break;
-        }
-
-        if (attempt < max_attach_attempts - 1)
-        {
-            RCLCPP_WARN(get_logger(), "Attachment failed, trying micro-adjustment %d/%d",
-                        attempt + 1, max_attach_attempts - 1);
-
-            // Try different micro-adjustments based on attempt number
-            waypoints.clear();
-            geometry_msgs::msg::Pose adjusted_pose = floor_robot_.getCurrentPose().pose;
-
-            switch (attempt % 4)
-            {
-            case 0: // Try slightly lower
-                adjusted_pose.position.z -= 0.002;
-                break;
-            case 1: // Try slight x offset
-                adjusted_pose.position.x += 0.002;
-                break;
-            case 2: // Try slight y offset
-                adjusted_pose.position.y += 0.002;
-                break;
-            case 3: // Try slight rotation
-                tf2::Quaternion q_orig, q_rot, q_new;
-                tf2::fromMsg(adjusted_pose.orientation, q_orig);
-                q_rot.setRPY(0, 0, 0.01); // Small yaw adjustment
-                q_new = q_orig * q_rot;
-                q_new.normalize();
-                adjusted_pose.orientation = tf2::toMsg(q_new);
-                break;
-            }
-
-            waypoints.push_back(adjusted_pose);
-            // Use very slow motion for micro-adjustments
-            FloorRobotMoveCartesian(waypoints, 0.05, 0.05, false);
-
-            // Toggle gripper to try to get better grip
-            if (attempt % 2 == 1)
-            {
-                FloorRobotSetGripperState(false);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-                FloorRobotSetGripperState(true);
-            }
-        }
-    }
-
+    // Check if attachment was successful
     if (!floor_gripper_state_.attached)
     {
         RCLCPP_ERROR(get_logger(), "Failed to attach to tray after multiple attempts");
@@ -1399,7 +1371,7 @@ bool RobotController::FloorRobotPickandPlaceTray(int tray_id, int agv_num)
     waypoints.push_back(BuildPose(tray_pose.position.x, tray_pose.position.y,
                                   tray_pose.position.z + 0.1, SetRobotOrientation(tray_rotation)));
 
-    bool lift_success = FloorRobotMoveCartesian(waypoints, 0.05, 0.05, true);
+    bool lift_success = FloorRobotMoveCartesian(waypoints, 0.1, 0.1, true);
     if (!lift_success)
     {
         RCLCPP_WARN(get_logger(), "Initial lift failed, trying backup method");
@@ -1415,7 +1387,7 @@ bool RobotController::FloorRobotPickandPlaceTray(int tray_id, int agv_num)
     waypoints.push_back(BuildPose(tray_pose.position.x, tray_pose.position.y,
                                   tray_pose.position.z + 0.4, SetRobotOrientation(tray_rotation)));
 
-    lift_success = FloorRobotMoveCartesian(waypoints, 0.05, 0.05, true);
+    lift_success = FloorRobotMoveCartesian(waypoints, 0.1, 0.1, true);
     if (!lift_success)
     {
         RCLCPP_WARN(get_logger(), "Cartesian lift failed, trying to return to station position");
@@ -1479,36 +1451,7 @@ bool RobotController::FloorRobotPickandPlaceTray(int tray_id, int agv_num)
         std::isnan(agv_tray_pose.position.z))
     {
         RCLCPP_ERROR(get_logger(), "Invalid AGV tray pose (contains NaN values)");
-
-        // Try fallback approach using predefined coordinates instead
-        RCLCPP_WARN(get_logger(), "Using fallback AGV coordinates");
-
-        // Predefined fallback coordinates based on AGV number
-        double agv_x = 0.0;
-        double agv_y = 0.0;
-
-        switch (agv_num)
-        {
-        case 1:
-            agv_x = -1.9;
-            agv_y = -3.375;
-            break;
-        case 2:
-            agv_x = -1.9;
-            agv_y = -2.625;
-            break;
-        case 3:
-            agv_x = -1.9;
-            agv_y = 2.625;
-            break;
-        case 4:
-            agv_x = -1.9;
-            agv_y = 3.375;
-            break;
-        }
-
-        agv_tray_pose = BuildPose(agv_x, agv_y, 0.75, SetRobotOrientation(0.0));
-        agv_rotation = 0.0;
+        return false;
     }
 
     // Now do careful Cartesian motion for placement
@@ -1559,7 +1502,7 @@ bool RobotController::FloorRobotPickandPlaceTray(int tray_id, int agv_num)
                                   agv_tray_pose.position.z + kit_tray_thickness_ + drop_height_,
                                   SetRobotOrientation(agv_rotation)));
 
-    bool place_success = FloorRobotMoveCartesian(waypoints, 0.05, 0.05, true);
+    bool place_success = FloorRobotMoveCartesian(waypoints, 0.1, 0.2, true);
     if (!place_success)
     {
         RCLCPP_ERROR(get_logger(), "Failed to place tray on AGV precisely");
@@ -1647,30 +1590,25 @@ bool RobotController::FloorRobotPickBinPart(ariac_msgs::msg::Part part_to_pick)
     RCLCPP_INFO_STREAM(get_logger(), "Attempting to pick a " << part_colors_[part_to_pick.color]
                                                              << " " << part_types_[part_to_pick.type] << " from the bins");
 
-    // Find part location with thread safety
+    // Check if part is in one of the bins
     geometry_msgs::msg::Pose part_pose;
     bool found_part = false;
     std::string bin_side;
 
-    // Check left bins with proper locking
+    // Check left bins
+    for (auto part : left_bins_parts_)
     {
-        std::lock_guard<std::mutex> lock(left_bins_mutex_);
-        for (auto part : left_bins_parts_)
+        if (part.part.type == part_to_pick.type && part.part.color == part_to_pick.color)
         {
-            if (part.part.type == part_to_pick.type && part.part.color == part_to_pick.color)
-            {
-                part_pose = MultiplyPose(left_bins_camera_pose_, part.pose);
-                found_part = true;
-                bin_side = "left_bins";
-                break;
-            }
+            part_pose = MultiplyPose(left_bins_camera_pose_, part.pose);
+            found_part = true;
+            bin_side = "left_bins";
+            break;
         }
     }
-
-    // Check right bins if not found
+    // Check right bins
     if (!found_part)
     {
-        std::lock_guard<std::mutex> lock(right_bins_mutex_);
         for (auto part : right_bins_parts_)
         {
             if (part.part.type == part_to_pick.type && part.part.color == part_to_pick.color)
@@ -1682,17 +1620,17 @@ bool RobotController::FloorRobotPickBinPart(ariac_msgs::msg::Part part_to_pick)
             }
         }
     }
-
     if (!found_part)
     {
         RCLCPP_INFO(get_logger(), "Unable to locate part in the bins");
         return false;
     }
 
-    RCLCPP_INFO_STREAM(get_logger(), "Found part in " << bin_side << ", moving to pick location");
+    RCLCPP_INFO_STREAM(get_logger(), "Found part in " << bin_side << " checking gripper type and moving to pick location");
+
     double part_rotation = GetYaw(part_pose);
 
-    // Change gripper if needed
+    // Change gripper at location closest to part
     if (floor_gripper_state_.type != "part_gripper")
     {
         std::string station;
@@ -1714,212 +1652,45 @@ bool RobotController::FloorRobotPickBinPart(ariac_msgs::msg::Part part_to_pick)
         {
             floor_robot_.setJointValueTarget(floor_kts2_js_);
         }
+        FloorRobotMovetoTarget();
 
-        if (!FloorRobotMovetoTarget())
-        {
-            RCLCPP_ERROR(get_logger(), "Failed to move to gripper change position");
-            return false;
-        }
-
-        if (!FloorRobotChangeGripper(station, "parts"))
-        {
-            RCLCPP_ERROR(get_logger(), "Failed to change to parts gripper");
-            return false;
-        }
+        FloorRobotChangeGripper(station, "parts");
     }
 
-    // Position robot at bin location
     floor_robot_.setJointValueTarget("linear_actuator_joint", rail_positions_[bin_side]);
     floor_robot_.setJointValueTarget("floor_shoulder_pan_joint", 0);
-    if (!FloorRobotMovetoTarget())
-    {
-        RCLCPP_ERROR(get_logger(), "Failed to move to bin position");
-        return false;
-    }
+    FloorRobotMovetoTarget();
 
-    // Approach part with improved waypoint planning
-    // First move to a pre-approach position higher above the part
-    geometry_msgs::msg::Quaternion approach_orientation = SetRobotOrientation(part_rotation);
     std::vector<geometry_msgs::msg::Pose> waypoints;
+    waypoints.push_back(BuildPose(part_pose.position.x, part_pose.position.y,
+                                  part_pose.position.z + 0.5, SetRobotOrientation(part_rotation)));
 
     waypoints.push_back(BuildPose(part_pose.position.x, part_pose.position.y,
-                                  part_pose.position.z + 0.2, approach_orientation));
+                                  part_pose.position.z + part_heights_[part_to_pick.type] + pick_offset_, SetRobotOrientation(part_rotation)));
 
-    if (!FloorRobotMoveCartesian(waypoints, 0.3, 0.3, true))
-    {
-        RCLCPP_ERROR(get_logger(), "Failed to move to approach position");
-        // Try a different approach - go directly to the part with joint space motion
-        floor_robot_.setPoseTarget(waypoints[0]);
-        if (!FloorRobotMovetoTarget())
-        {
-            RCLCPP_ERROR(get_logger(), "Failed to move to approach position using joint space motion");
-            return false;
-        }
-    }
+    FloorRobotMoveCartesian(waypoints, 0.3, 0.3, true);
 
-    // Then move directly down to the part - use smaller steps for this critical move
-    waypoints.clear();
-    double target_z = part_pose.position.z + part_heights_[part_to_pick.type] + pick_offset_;
-
-    // Create an intermediate waypoint for smoother motion
-    waypoints.push_back(BuildPose(part_pose.position.x, part_pose.position.y,
-                                  target_z + 0.05, approach_orientation));
-
-    waypoints.push_back(BuildPose(part_pose.position.x, part_pose.position.y,
-                                  target_z, approach_orientation));
-
-    if (!FloorRobotMoveCartesian(waypoints, 0.1, 0.1, true))
-    {
-        RCLCPP_ERROR(get_logger(), "Failed to move to pick position");
-        // Try a different approach - use a direct pose target
-        floor_robot_.setPoseTarget(waypoints.back());
-        if (!FloorRobotMovetoTarget())
-        {
-            RCLCPP_ERROR(get_logger(), "Failed to move to pick position using joint space motion");
-            return false;
-        }
-    }
-
-    // Attempt to pick with adaptive strategy
     FloorRobotSetGripperState(true);
 
-    // Wait a moment to see if part attaches immediately
-    rclcpp::sleep_for(std::chrono::milliseconds(250));
+    FloorRobotWaitForAttach(3.0);
 
-    // If not attached, try several micro-adjustments
-    int micro_adjust_count = 0;
-    const int max_micro_adjusts = 5;
-    const double micro_adjust_distance = 0.001;
+    RCLCPP_INFO_STREAM(get_logger(), "Picked Up the " << part_colors_[part_to_pick.color] << " " << part_types_[part_to_pick.type] << " from the bins");
 
-    geometry_msgs::msg::Pose current_pose = floor_robot_.getCurrentPose().pose;
+    // Add part to planning scene
+    std::string part_name = part_colors_[part_to_pick.color] + "_" + part_types_[part_to_pick.type];
+    AddModelToPlanningScene(part_name, part_types_[part_to_pick.type] + ".stl", part_pose);
+    floor_robot_.attachObject(part_name);
+    floor_robot_attached_part_ = part_to_pick;
 
-    rclcpp::Time attach_start = rclcpp::Clock().now();
-    rclcpp::Duration attach_timeout = rclcpp::Duration::from_seconds(3.0);
+    order_planning_scene_objects_.push_back(part_name);
 
-    while (!floor_gripper_state_.attached &&
-           micro_adjust_count < max_micro_adjusts &&
-           rclcpp::Clock().now() - attach_start < attach_timeout)
-    {
-        micro_adjust_count++;
-        RCLCPP_INFO(get_logger(), "Attempting micro-adjustment %d/%d to attach to part",
-                    micro_adjust_count, max_micro_adjusts);
-
-        // Try different adjustment strategies
-        waypoints.clear();
-
-        // Update current pose in case it changed
-        current_pose = floor_robot_.getCurrentPose().pose;
-
-        int adjustment_type = micro_adjust_count % 5;
-
-        if (adjustment_type == 0)
-        {
-            // Try slightly lower
-            current_pose.position.z -= micro_adjust_distance;
-        }
-        else if (adjustment_type == 1)
-        {
-            // Try slightly offset in x
-            current_pose.position.x += micro_adjust_distance;
-        }
-        else if (adjustment_type == 2)
-        {
-            // Try slightly offset in y
-            current_pose.position.y += micro_adjust_distance;
-        }
-        else if (adjustment_type == 3)
-        {
-            // Try slight rotation adjustment
-            tf2::Quaternion q_orig, q_rot, q_new;
-            tf2::fromMsg(current_pose.orientation, q_orig);
-            q_rot.setRPY(0, 0, 0.02); // Small yaw adjustment
-            q_new = q_orig * q_rot;
-            q_new.normalize();
-            current_pose.orientation = tf2::toMsg(q_new);
-        }
-        else if (adjustment_type == 4)
-        {
-            // Toggle gripper
-            FloorRobotSetGripperState(false);
-            rclcpp::sleep_for(std::chrono::milliseconds(100));
-            FloorRobotSetGripperState(true);
-            continue; // Skip the motion for this case
-        }
-
-        waypoints.push_back(current_pose);
-        if (!FloorRobotMoveCartesian(waypoints, 0.05, 0.05, false))
-        {
-            RCLCPP_WARN(get_logger(), "Micro-adjustment %d failed, trying next approach", micro_adjust_count);
-            continue;
-        }
-
-        // Short pause to allow gripper status to update
-        rclcpp::sleep_for(std::chrono::milliseconds(200));
-
-        if (floor_gripper_state_.attached)
-        {
-            RCLCPP_INFO(get_logger(), "Part attached after %d micro-adjustments", micro_adjust_count);
-            break;
-        }
-    }
-
-    if (!floor_gripper_state_.attached)
-    {
-        RCLCPP_ERROR(get_logger(), "Failed to attach to part after %d micro-adjustments", micro_adjust_count);
-        FloorRobotSetGripperState(false);
-
-        // Move up to clear the area
-        waypoints.clear();
-        waypoints.push_back(BuildPose(part_pose.position.x, part_pose.position.y,
-                                      part_pose.position.z + 0.2, approach_orientation));
-        FloorRobotMoveCartesian(waypoints, 0.1, 0.1, true);
-        return false;
-    }
-
-    RCLCPP_INFO_STREAM(get_logger(), "Picked Up the " << part_colors_[part_to_pick.color]
-                                                      << " " << part_types_[part_to_pick.type]);
-
-    // Add part to planning scene with improved error handling
-    try
-    {
-        std::string part_name = part_colors_[part_to_pick.color] + "_" + part_types_[part_to_pick.type];
-
-        // First clear any previously attached object with the same name
-        try
-        {
-            floor_robot_.detachObject(part_name);
-        }
-        catch (...)
-        {
-            // Ignore errors if no object was attached
-        }
-
-        // Now add the new object
-        AddModelToPlanningScene(part_name, part_types_[part_to_pick.type] + ".stl", part_pose);
-        floor_robot_.attachObject(part_name);
-        floor_robot_attached_part_ = part_to_pick;
-        order_planning_scene_objects_.push_back(part_name);
-    }
-    catch (const std::exception &e)
-    {
-        RCLCPP_WARN(get_logger(), "Error adding part to planning scene: %s", e.what());
-        // Continue even if planning scene update fails
-    }
-
-    // Move up with the part safely
+    // Move up slightly
     waypoints.clear();
     waypoints.push_back(BuildPose(part_pose.position.x, part_pose.position.y,
-                                  part_pose.position.z + 0.2, approach_orientation));
+                                  part_pose.position.z + 0.2, SetRobotOrientation(part_rotation)));
 
-    if (!FloorRobotMoveCartesian(waypoints, 0.1, 0.1, true))
-    {
-        RCLCPP_WARN(get_logger(), "Failed to lift part cleanly, attempting recovery move");
-        // Try a simpler move if Cartesian fails
-        floor_robot_.setNamedTarget("home");
-        FloorRobotMovetoTarget();
-    }
+    FloorRobotMoveCartesian(waypoints, 0.2, 0.1, true);
 
-    // Return to safe position
     floor_robot_.setJointValueTarget("linear_actuator_joint", rail_positions_[bin_side]);
     floor_robot_.setJointValueTarget("floor_shoulder_pan_joint", 0);
     FloorRobotMovetoTarget();
@@ -2908,23 +2679,36 @@ bool RobotController::CompleteKittingTask(ariac_msgs::msg::KittingTask task)
 
 bool RobotController::StartCompetition()
 {
-    RCLCPP_INFO_STREAM_ONCE(this->get_logger(), BOLD + ORANGE << "Starting the competition" << RESET);
-    // Wait for competition state to be ready
-    while (competition_state_ != ariac_msgs::msg::CompetitionState::READY)
+    // Don't wait in a blocking loop - just check if ready
+    if (competition_state_ != ariac_msgs::msg::CompetitionState::READY)
     {
-        RCLCPP_INFO_STREAM_ONCE(this->get_logger(), BOLD + ORANGE << "Waiting for the competition state to be ready..." << RESET);
+        RCLCPP_INFO(get_logger(), "Competition not ready yet");
+        return false;
     }
 
+    RCLCPP_INFO_STREAM(this->get_logger(), BOLD + ORANGE << "Competition is ready - starting competition" << RESET);
+
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr client;
-
     std::string srv_name = "/ariac/start_competition";
-
     client = this->create_client<std_srvs::srv::Trigger>(srv_name);
 
-    auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
+    // Wait for service to be available with timeout
+    if (!client->wait_for_service(std::chrono::seconds(1)))
+    {
+        RCLCPP_ERROR(get_logger(), "Start competition service not available");
+        return false;
+    }
 
+    auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
     auto future = client->async_send_request(request);
-    future.wait();
+
+    // Use a timeout for the future
+    std::future_status status = future.wait_for(std::chrono::seconds(3));
+    if (status != std::future_status::ready)
+    {
+        RCLCPP_ERROR(get_logger(), "Start competition service call timed out");
+        return false;
+    }
 
     return future.get()->success;
 }
@@ -3026,137 +2810,15 @@ bool RobotController::MoveAGV(int agv_num, int destination)
     return false;
 }
 
-
 int main(int argc, char *argv[])
 {
-  rclcpp::init(argc, argv);
+    rclcpp::init(argc, argv);
+    auto node = std::make_shared<RobotController>();
 
-  auto node = std::make_shared<RobotController>();
+    rclcpp::executors::MultiThreadedExecutor executor;
+    executor.add_node(node);
+    executor.spin();
 
-  rclcpp::executors::MultiThreadedExecutor executor;
-  executor.add_node(node);
-  std::thread([&executor]() { executor.spin(); }).detach();
-
-  // Start Competition
-  node->StartCompetition();
-  node->AddModelsToPlanningScene();
-
-
-  rclcpp::shutdown();
+    rclcpp::shutdown();
+    return 0;
 }
-
-
-// int main(int argc, char *argv[])
-// {
-//     // Initialize ROS 2
-//     rclcpp::init(argc, argv);
-
-//     // Create the controller node with exception handling
-//     std::shared_ptr<RobotController> node;
-//     try
-//     {
-//         node = std::make_shared<RobotController>();
-//     }
-//     catch (const std::exception &e)
-//     {
-//         RCLCPP_ERROR(rclcpp::get_logger("main"), "Failed to initialize RobotController: %s", e.what());
-//         rclcpp::shutdown();
-//         return 1;
-//     }
-
-//     // Set up multi-threaded executor for better performance
-//     rclcpp::executors::MultiThreadedExecutor executor(
-//         rclcpp::ExecutorOptions(), 4); // Using 4 threads
-
-//     // Add node to executor
-//     executor.add_node(node);
-
-//     // Start spinning in a separate thread so callbacks can be processed
-//     std::thread spinner_thread([&executor]()
-//                                { executor.spin(); });
-
-//     // Wait a moment for things to initialize
-//     rclcpp::sleep_for(std::chrono::seconds(1));
-
-//     // Start the competition
-//     if (!node->StartCompetition())
-//     {
-//         RCLCPP_ERROR(node->get_logger(), "Failed to start the competition");
-//         rclcpp::shutdown();
-//         return 1;
-//     }
-
-//     // Wait for user to interrupt with Ctrl+C
-//     RCLCPP_INFO(node->get_logger(), "RobotController started. Press Ctrl+C to exit.");
-
-//     // Use a condition variable to wait for a signal
-//     std::condition_variable cv;
-//     std::mutex m;
-//     std::unique_lock<std::mutex> lk(m);
-
-//     // Set up signal handling
-//     std::signal(SIGINT, [](int sig)
-//                 {
-//         RCLCPP_INFO(rclcpp::get_logger("main"), "Caught interrupt signal. Shutting down...");
-//         rclcpp::shutdown(); });
-
-//     // Wait until ROS is shutdown
-//     while (rclcpp::ok())
-//     {
-//         cv.wait_for(lk, std::chrono::seconds(1));
-//     }
-
-//     // Join the spinner thread
-//     spinner_thread.join();
-
-//     // End competition
-//     node->EndCompetition();
-
-//     // Clean shutdown
-//     RCLCPP_INFO(node->get_logger(), "Shutting down RobotController...");
-
-//     return 0;
-// }
-
-// int main(int argc, char *argv[])
-// {
-//     // Initialize ROS 2
-//     rclcpp::init(argc, argv);
-
-//     // Create the controller node with exception handling
-//     std::shared_ptr<RobotController> node;
-//     try
-//     {
-//         node = std::make_shared<RobotController>();
-//     }
-//     catch (const std::exception &e)
-//     {
-//         RCLCPP_ERROR(rclcpp::get_logger("main"), "Failed to initialize RobotController: %s", e.what());
-//         rclcpp::shutdown();
-//         return 1;
-//     }
-
-//     // Set up multi-threaded executor for better performance
-//     rclcpp::executors::MultiThreadedExecutor executor(
-//         rclcpp::ExecutorOptions(), 4); // Using 4 threads
-
-//     // Add node to executor
-//     executor.add_node(node);
-
-//     // Spin executor with signal handling
-//     try
-//     {
-//         RCLCPP_INFO(node->get_logger(), "RobotController started. Press Ctrl+C to exit.");
-//         executor.spin();
-//     }
-//     catch (const std::exception &e)
-//     {
-//         RCLCPP_ERROR(node->get_logger(), "Exception in executor: %s", e.what());
-//     }
-
-//     // Clean shutdown
-//     RCLCPP_INFO(node->get_logger(), "Shutting down RobotController...");
-//     rclcpp::shutdown();
-
-//     return 0;
-// }
