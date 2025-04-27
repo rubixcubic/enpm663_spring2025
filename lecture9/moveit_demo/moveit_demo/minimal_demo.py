@@ -526,30 +526,12 @@ class RobotController(Node):
                     "Successfully added all objects to planning scene",
                 )
                 self._objects_added_to_planning_scene = True
-                # Force extra publishing to make sure RViz shows everything
-                self._refresh_planning_scene_display()
             else:
                 FancyLog.warn(
                     self.get_logger(),
                     "Failed to add all objects to planning scene, will retry",
                 )
                 return  # Exit early to retry on next timer callback
-
-        # if self._objects_added_to_planning_scene:
-        #     self._publish_planning_scene_for_rviz()
-        # # Every few cycles, refresh the planning scene visualization
-        # if hasattr(self, "_viz_refresh_counter"):
-        #     self._viz_refresh_counter += 1
-        #     if self._viz_refresh_counter >= 3:  # Refresh every 3 cycles
-        #         self._publish_planning_scene_for_rviz()
-        #         self._viz_refresh_counter = 0
-        # else:
-        #     self._viz_refresh_counter = 0
-
-        # Verify that planning scene is ready by checking for expected objects
-        # if not self._verify_planning_scene_ready():
-        #     self.get_logger().warn("Planning scene not fully ready yet, waiting...")
-        #     return  # Exit early to wait for planning scene to be ready
 
         if not self._operation_started:
             # Wait for camera data to be available
@@ -779,9 +761,8 @@ class RobotController(Node):
 
         if success:
             FancyLog.pscene(self.get_logger(), "Planning scene initialization complete")
-            # self._publish_planning_scene_for_rviz()
             self._refresh_planning_scene_display()
-            time.sleep(0.5)
+            # time.sleep(0.5)
         else:
             FancyLog.error(self.get_logger(), "Planning scene initialization incomplete - some objects failed to load")
         
@@ -1254,46 +1235,6 @@ class RobotController(Node):
         except Exception as e:
             self.get_logger().error(f"Error placing part: {str(e)}")
             return False
-
-    def _publish_planning_scene_for_rviz(self):
-        """
-        Force a refresh of the planning scene visualization in RViz.
-        """
-        FancyLog.pscene(
-            self.get_logger(), "Refreshing planning scene visualization in RViz"
-        )
-
-        with self._planning_scene_monitor.read_write() as scene:
-            # Just trigger an update
-            scene.current_state.update()
-
-        # Create a publisher if it doesn't exist (for direct publishing as backup)
-        if not hasattr(self, "_planning_scene_publisher"):
-            self._planning_scene_publisher = self.create_publisher(
-                PlanningScene, "/planning_scene", 10
-            )
-            # Short delay to allow publisher to initialize
-            time.sleep(0.2)
-
-        # Also publish directly to ensure RViz gets the update
-        scene_msg = PlanningScene()
-        scene_msg.is_diff = False
-
-        # Get current scene
-        # with self._planning_scene_monitor.read_only() as scene:
-        #     # Get the robot state
-        #     scene_msg.robot_state = robotStateToRobotStateMsg(scene.current_state)
-
-        # Add all tracked collision objects
-        for co in self._world_collision_objects:
-            scene_msg.world.collision_objects.append(co)
-
-        # Publish
-        self._planning_scene_publisher.publish(scene_msg)
-
-        self.get_logger().info(
-            f"Published planning scene with {len(self._world_collision_objects)} objects"
-        )
 
 
     def _create_mesh_collision_object(self, name, mesh_path, pose, frame_id="world"):

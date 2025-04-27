@@ -1,14 +1,15 @@
 import os
-
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
     OpaqueFunction,
+    RegisterEventHandler,
+    TimerAction
 )
-
+from launch.event_handlers import OnProcessStart
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.conditions import IfCondition, LaunchConfigurationEquals
+from launch.conditions import IfCondition, UnlessCondition, LaunchConfigurationEquals
 from launch_ros.actions import Node
 from launch.substitutions import PathJoinSubstitution, LaunchConfiguration
 
@@ -56,8 +57,19 @@ def launch_setup(context, *args, **kwargs):
 
     parameters.update(moveit_config.to_dict())
 
-    # Tutorial Nodes with conditional execution based on program choice
-    moveit_demo_node_py = Node(
+    
+    # Python node that will start directly if RViz is not enabled
+    moveit_demo_node_py_direct = Node(
+        package="moveit_demo",
+        executable="minimal_demo.py",
+        output="screen",
+        parameters=[parameters],
+        condition=LaunchConfigurationEquals("program", "python") and 
+                  UnlessCondition(start_rviz),
+    )
+    
+    # Python node that will be started by event handler if RViz is enabled
+    moveit_demo_node_py_after_rviz = Node(
         package="moveit_demo",
         executable="minimal_demo.py",
         output="screen",
@@ -98,6 +110,22 @@ def launch_setup(context, *args, **kwargs):
         condition=IfCondition(start_rviz),
     )
 
+    # Register event handler to start Python node after RViz starts with a 5-second delay
+    start_python_after_rviz = RegisterEventHandler(
+        event_handler=OnProcessStart(
+            target_action=rviz_node,
+            on_start=[
+                # Add a TimerAction to delay the start of the Python node
+                TimerAction(
+                    period=5.0,  # 5-second delay
+                    actions=[moveit_demo_node_py_after_rviz]
+                )
+            ],
+        ),
+        condition=IfCondition(start_rviz) and 
+                  LaunchConfigurationEquals("program", "python"),
+    )
+
     # Move Group node
     move_group = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -112,9 +140,10 @@ def launch_setup(context, *args, **kwargs):
 
     nodes_to_start = [
         moveit_demo_node_cpp,
-        moveit_demo_node_py,
+        moveit_demo_node_py_direct,  # Will only run if RViz is disabled
         move_group,
-        rviz_node
+        rviz_node,
+        start_python_after_rviz,  # Will start Python node after RViz if RViz is enabled
     ]
 
     return nodes_to_start
