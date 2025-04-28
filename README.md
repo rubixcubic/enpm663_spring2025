@@ -19,7 +19,210 @@ ros2 launch moveit_demo controller_demo.launch.py rviz:=true
 ```
 The floor robot should pick up a purple pump.
 
-## Relevant Methods 
+
+#   MoveIt: A Comprehensive Overview
+
+MoveIt is a powerful open-source framework for motion planning, manipulation, and control of robots. It provides tools for:
+
+* Motion Planning: Calculating collision-free paths for robots to move.
+* Manipulation: Handling tasks like grasping and placing objects.
+* Perception: Integrating sensor data to understand the environment.
+* Control: Executing planned motions on real or simulated robots.
+
+##   MoveIt Modules Used in Python
+
+The primary MoveIt modules used in the provided Python script are:
+
+* `moveit_py`:
+    * This is the main Python interface to MoveIt.
+    * It provides classes and functions to interact with MoveIt's core functionalities.
+    * It's used to create the `MoveItPy` instance, which is the central point for interacting with MoveIt.
+* `PlanningSceneMonitor`:
+    * This module allows the script to keep track of the robot's environment.
+    * It's crucial for collision avoidance.
+* `moveit.core.robot_trajectory`:
+    * This module is used to represent and manipulate robot trajectories (planned paths of robot joints).
+* `moveit.core.robot_state`:
+    * This module represents the robot's configuration (joint positions, etc.).
+* `moveit.core.kinematic_constraints`:
+    * This module helps in defining constraints for motion planning, such as joint position goals.
+
+##   MoveIt Functions and Classes Explained
+
+Here's a breakdown of the key MoveIt-related functions and classes used in the script:
+
+###   1.  Initialization and Setup
+
+* `MoveItPy(node_name="ariac_robots_moveit_py")`:
+    * Creates the main `MoveItPy` object.
+    * `node_name` is the ROS 2 node name for MoveIt.
+* `PlanningSceneMonitor()`:
+    * Instantiated as `self._planning_scene_monitor`.
+    * Maintains the current state of the planning scene:
+        * Robot's configuration.
+        * Positions of obstacles/objects.
+    * Allows the robot to "perceive" its world for collision avoidance.
+* `RobotState(self._ariac_robots.get_robot_model())`:
+    * Represents the state of the robot (joint positions).
+    * `self._ariac_robots.get_robot_model()` gets the robot's model from MoveIt.
+* `self._ariac_robots.get_planning_component("floor_robot")`:
+    * Obtains a `PlanningComponent` for the "floor_robot".
+    * A `PlanningComponent` plans motions for a specific robot/joint group.
+
+###   2.  Motion Planning
+
+* `self._floor_robot.set_goal_state(...)`:
+    * Defines the goal for motion planning.
+    * Goal can be:
+        * `pose_stamped_msg`: Desired Cartesian pose for the end effector.
+        * `motion_plan_constraints`: Constraints on joint positions.
+* `construct_joint_constraint(...)`:
+    * (From `moveit.core.kinematic_constraints`)
+    * Creates a constraint specifying desired joint positions.
+* `self._floor_robot.plan()`:
+    * The core motion planning function.
+    * Calculates a collision-free trajectory to the goal state.
+* `self._ariac_robots.execute(trajectory, controllers=[...])`:
+    * Executes the planned `trajectory` on the robot using controllers.
+
+###   3.  Robot Trajectories
+
+* `RobotTrajectory(self._ariac_robots.get_robot_model())`:
+    * Represents a planned sequence of robot states (joint positions) over time.
+* `trajectory.set_robot_trajectory_msg(scene.current_state, trajectory_msg)`:
+    * Sets the trajectory message into the `RobotTrajectory` object.
+* `trajectory.joint_model_group_name = "floor_robot"`:
+    * Specifies the robot joint group for the trajectory.
+
+###   4.  Cartesian Path Planning
+
+* `self._call_get_cartesian_path(...)`:
+    * Calls a service (`compute_cartesian_path`) to plan a Cartesian path (end-effector path in 3D space).
+* `GetCartesianPath.Request()`:
+    * Service request message for Cartesian path computation.
+* `GetCartesianPath.Response`:
+    * Service response, containing the planned Cartesian trajectory.
+
+###   5.  Planning Scene Management
+
+* `CollisionObject()`:
+    * Represents an object in the environment that can collide with the robot.
+    * Used for obstacles (bins, tables).
+* `AttachedCollisionObject()`:
+    * Represents an object attached to the robot (part held by gripper).
+* `PlanningScene()`:
+    * Message representing the entire state of the planning scene.
+    * Used to communicate environment changes to MoveIt.
+* `self._apply_planning_scene(scene)`:
+    * Sends a `PlanningScene` message to update the environment.
+* `self._planning_scene_monitor.read_write() as scene:`
+    * Context manager for thread-safe access to the planning scene.
+* `scene.apply_collision_object(collision_object)`:
+    * Adds a `CollisionObject` to the planning scene.
+* `scene.current_state.update()`:
+    * Updates the internal robot state.
+* `scene.attachBody()` / `scene.detachObject()`:
+    * Attaches/detaches `CollisionObject` to/from the robot.
+
+###   Important Notes
+
+* **Asynchronous ROS 2 Services:**
+    * The script uses services (`/apply_planning_scene`, `compute_cartesian_path`).
+    * `call_async()` is used for asynchronous calls (non-blocking).
+    * Callbacks handle service responses.
+* **Planning Scene Updates:**
+    * Accurate planning scene updates are crucial for MoveIt's awareness of the environment.
+    * `PlanningScene` messages and `PlanningSceneMonitor` are used.
+* **Collision Avoidance:**
+    * MoveIt's core function is collision avoidance.
+    * The planning scene enables this.
+
+##   Motion Plan Constraints: A Deeper Dive
+
+`motion_plan_constraints` allow specifying restrictions/requirements on robot motion during planning.
+
+###   Types of Constraints
+
+* **Joint Constraints:**
+    * Specify desired positions for robot joints.
+    * Used for precise robot configurations.
+
+###   `construct_joint_constraint`
+
+* **Input:**
+    * `robot_state`: A `RobotState` with desired joint configuration.
+    * `joint_model_group`: Which joint group the constraint applies to.
+* **Output:**
+    * A `JointConstraint` object.
+* **Usage:**
+    * Create `RobotState`, set `joint_positions`.
+    * Use `construct_joint_constraint` to create the constraint.
+    * Provide the constraint to `set_goal_state`.
+
+###   Why Use Joint Constraints?
+
+* Precise positioning
+* Avoiding singularities
+* Task requirements
+* Reproducibility
+
+###   Example from Your Code (`_move_floor_robot_to_joint_position`)
+
+* The code wants the robot to move to a predefined joint configuration (like "home" or a station position).
+* It creates a `RobotState` (`goal_state`) and sets the `joint_positions` to the desired values.
+* `construct_joint_constraint` turns this `goal_state` into a `JointConstraint`.
+* This constraint is then given to `set_goal_state`, telling MoveIt to plan a motion that ends with the robot's joints at those specific positions.
+
+##   Planning Scene: Detailed Explanation
+
+The planning scene is a central concept in MoveIt. It represents the robot's world and is used for motion planning, collision checking, and other operations.
+
+###   Key Components of the Planning Scene
+
+* **Robot Model:**
+    * A description of the robot's kinematics and dynamics (e.g., links, joints, degrees of freedom).
+    * MoveIt uses this to calculate robot poses and motions.
+* **Robot State:**
+    * The current configuration of the robot, including joint positions/velocities/accelerations.
+    * The planning scene maintains the robot's current and goal states.
+* **Collision Objects:**
+    * Represent static objects in the environment that the robot can collide with (e.g., tables, walls, bins).
+    * These objects are defined by their shapes (e.g., boxes, cylinders, meshes) and poses (position and orientation).
+* **Attached Collision Objects:**
+    * Represent objects that are temporarily attached to the robot (e.g., a part held by the gripper).
+    * Their pose is defined relative to the robot's link they are attached to.
+* **Transforms:**
+    * Coordinate transformations between different frames in the scene.
+    * Essential for calculating object poses and planning motions.
+
+###   PlanningSceneMonitor
+
+* The `PlanningSceneMonitor` is a crucial class for managing the planning scene.
+* It provides an interface for:
+    * Getting the current planning scene.
+    * Updating the planning scene (adding/removing objects, changing robot state).
+    * Publishing the planning scene to other ROS 2 nodes (e.g., RViz for visualization).
+* It maintains a thread-safe representation of the planning scene, ensuring consistency.
+
+###   Updating the Planning Scene
+
+* The planning scene needs to be updated whenever the environment changes.
+* Common update operations include:
+    * Adding `CollisionObject`s for new obstacles.
+    * Removing `CollisionObject`s for removed obstacles.
+    * Attaching/detaching `AttachedCollisionObject`s when the robot grasps/releases objects.
+    * Updating the robot's `RobotState` as it moves.
+* In ROS 2, the `PlanningScene` message is used to communicate these updates.
+
+###   Importance of the Planning Scene
+
+* **Collision Avoidance:** The planning scene is essential for collision checking during motion planning. MoveIt uses it to ensure that the planned paths are collision-free.
+* **Accurate Motion Planning:** The planning scene provides the planner with a complete representation of the robot and its environment, enabling it to generate accurate and feasible motions.
+* **Robot Awareness:** The planning scene allows the robot to "be aware" of its surroundings, which is crucial for complex manipulation tasks.
+* **Visualization:** The planning scene can be visualized in RViz, providing a valuable tool for debugging and understanding robot behavior.
+
+
+<!-- ## Relevant Methods 
 
 ### 1. `_control_cb`
 
@@ -264,4 +467,4 @@ The planning scene is implemented using MoveIt, a popular motion planning framew
 - Frame transformations: Maintaining proper coordinate frames for all objects
 - Threading considerations: Safely accessing the scene from multiple processes
 
-By maintaining an accurate planning scene, robots can operate safely and effectively in complex environments while handling various objects and avoiding collisions.
+By maintaining an accurate planning scene, robots can operate safely and effectively in complex environments while handling various objects and avoiding collisions. -->
