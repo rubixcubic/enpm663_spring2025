@@ -1414,10 +1414,21 @@ class RobotController(Node):
         self._right_bins_camera_pose = msg.sensor_pose
 
     def _set_floor_robot_gripper_state(self, state):
-        """Optimized gripper state control with faster response handling"""
+        """Control gripper state and update planning scene when detaching objects."""
         if self._floor_robot_gripper_state.enabled == state:
             self.get_logger().debug(f"Gripper is already {self._gripper_states[state]}")
             return None
+
+        # If disabling the gripper and we have an attached part, detach it in the planning scene
+        if not state and self._floor_robot_attached_part is not None:
+            part_name = (
+                self._part_colors[self._floor_robot_attached_part.color]
+                + "_"
+                + self._part_types[self._floor_robot_attached_part.type]
+            )
+            self._detach_object_from_floor_gripper(part_name)
+            # Clear the attached part reference
+            self._floor_robot_attached_part = None
 
         request = VacuumGripperControl.Request()
         request.enable = state
@@ -1880,13 +1891,7 @@ class RobotController(Node):
 
         except Exception as e:
             self.get_logger().error(f"Error applying planning scene: {str(e)}")
-            # Try direct publishing as a fallback
-            try:
-                self._direct_publish_planning_scene(scene)
-                return True
-            except Exception as e2:
-                self.get_logger().error(f"Direct publishing also failed: {str(e2)}")
-                return False
+            return False
 
     def _direct_publish_planning_scene(self, scene):
         """Publish planning scene directly to the planning scene topic."""
@@ -2180,12 +2185,7 @@ class RobotController(Node):
         return True
 
     def _attach_model_to_floor_gripper(self, part_to_pick: PartMsg, part_pose: Pose):
-        """
-        Attach a part to the floor gripper in the planning scene efficiently.
-
-        This implementation is optimized for speed, with options for debugging.
-        """
-        # Create a part name based on its color and type
+        """Attach a part to the floor gripper in the planning scene."""
         # Create a part name based on its color and type
         part_name = (
             self._part_colors[part_to_pick.color]
@@ -2193,21 +2193,8 @@ class RobotController(Node):
             + self._part_types[part_to_pick.type]
         )
 
-        # Always track the part internally for collision awareness
+        # Always track the part internally
         self._floor_robot_attached_part = part_to_pick
-
-        # Check if we're using simplified mode for speed
-        debug_mode = False  # Set this to True only when debugging visualization
-
-        if not debug_mode:
-            # Fast path - just track the part without scene updates
-            self.get_logger().info(
-                f"Tracking attached part: {part_name} (simplified for speed)"
-            )
-            return True
-
-        # Full planning scene update path (for debugging visualization)
-        self.get_logger().info(f"Attaching {part_name} to floor gripper (full update)")
 
         # Get the path to the mesh file for the part
         model_path = self._mesh_file_path + self._part_types[part_to_pick.type] + ".stl"
@@ -2217,92 +2204,110 @@ class RobotController(Node):
             return False
 
         try:
-            # Create a planning scene message for the update
-            planning_scene = PlanningScene()
-            planning_scene.is_diff = True
+            # Use a single planning scene operation for consistency
+            with self._planning_scene_monitor.read_write() as scene:
+                # Create the collision object
+                co = CollisionObject()
+                co.id = part_name
+                co.header.frame_id = "world"
+                co.header.stamp = self.get_clock().now().to_msg()
 
-            # Create the collision object
-            co = CollisionObject()
-            co.id = part_name
-            co.header.frame_id = "world"
-            co.header.stamp = self.get_clock().now().to_msg()
+                # Create the mesh
+                with pyassimp.load(model_path) as assimp_scene:
+                    if not assimp_scene.meshes:
+                        self.get_logger().error(f"No meshes found in {model_path}")
+                        return False
 
-            # Create the mesh from the file
-            with pyassimp.load(model_path) as scene:
-                if not scene.meshes:
-                    self.get_logger().error(f"No meshes found in {model_path}")
-                    return False
+                    mesh = Mesh()
+                    # Add triangles
+                    for face in assimp_scene.meshes[0].faces:
+                        triangle = MeshTriangle()
+                        if hasattr(face, "indices"):
+                            if len(face.indices) == 3:
+                                triangle.vertex_indices = [
+                                    face.indices[0],
+                                    face.indices[1],
+                                    face.indices[2],
+                                ]
+                                mesh.triangles.append(triangle)
+                        else:
+                            if len(face) == 3:
+                                triangle.vertex_indices = [face[0], face[1], face[2]]
+                                mesh.triangles.append(triangle)
 
-                mesh = Mesh()
-                # Add triangles
-                for face in scene.meshes[0].faces:
-                    triangle = MeshTriangle()
-                    if hasattr(face, "indices"):
-                        if len(face.indices) == 3:
-                            triangle.vertex_indices = [
-                                face.indices[0],
-                                face.indices[1],
-                                face.indices[2],
-                            ]
-                            mesh.triangles.append(triangle)
-                    else:
-                        if len(face) == 3:
-                            triangle.vertex_indices = [face[0], face[1], face[2]]
-                            mesh.triangles.append(triangle)
+                    # Add vertices
+                    for vertex in assimp_scene.meshes[0].vertices:
+                        point = Point()
+                        point.x = float(vertex[0])
+                        point.y = float(vertex[1])
+                        point.z = float(vertex[2])
+                        mesh.vertices.append(point)
 
-                # Add vertices
-                for vertex in scene.meshes[0].vertices:
-                    point = Point()
-                    point.x = float(vertex[0])
-                    point.y = float(vertex[1])
-                    point.z = float(vertex[2])
-                    mesh.vertices.append(point)
+                # Add the mesh to the collision object
+                co.meshes.append(mesh)
+                co.mesh_poses.append(part_pose)
+                co.operation = CollisionObject.ADD
 
-            # Add the mesh to the collision object
-            co.meshes.append(mesh)
-            co.mesh_poses.append(part_pose)
-            co.operation = CollisionObject.ADD
-
-            # First add the object to the world - this is important!
-            planning_scene.world.collision_objects.append(co)
-
-            # Apply this first update to ensure the object exists in the world
-            self._apply_planning_scene(planning_scene)
-
-            # Now create an attached collision object
-            aco = AttachedCollisionObject()
-            aco.link_name = "floor_gripper"
-            aco.object = co
-            aco.object.operation = CollisionObject.ADD
-            aco.touch_links = ["floor_gripper", "floor_tool0", "floor_wrist_3_link"]
-
-            # Create a new planning scene message for the attachment
-            attach_scene = PlanningScene()
-            attach_scene.is_diff = True
-            attach_scene.robot_state.attached_collision_objects.append(aco)
-
-            # Now the crucial part - remove the object from the world since it's attached
-            remove_co = CollisionObject()
-            remove_co.id = part_name
-            remove_co.operation = CollisionObject.REMOVE
-            attach_scene.world.collision_objects.append(remove_co)
-
-            # Apply the attachment
-            success = self._apply_planning_scene(attach_scene)
-
-            if success:
-                self.get_logger().info(
-                    f"Successfully attached {part_name} to floor gripper"
-                )
-                return True
-            else:
-                self.get_logger().error(
-                    f"Failed to attach {part_name} to floor gripper"
-                )
-                return False
-
+                # First add to world - this is important!
+                scene.apply_collision_object(co)
+                
+                # Then create the attachment
+                aco = AttachedCollisionObject()
+                aco.link_name = "floor_gripper"
+                aco.object = co
+                aco.touch_links = ["floor_gripper", "floor_tool0", "floor_wrist_3_link", 
+                                "floor_wrist_2_link", "floor_wrist_1_link", "floor_flange", "floor_ft_frame"]
+                
+                # Update the state
+                scene.current_state.attachBody(part_name, "floor_gripper", aco.touch_links)
+                scene.current_state.update()
+                
+                # Make the attachment visible in the planning scene
+                ps = PlanningScene()
+                ps.is_diff = True
+                ps.robot_state.attached_collision_objects.append(aco)
+                
+                # Remove from world collision objects since it's now attached
+                remove_co = CollisionObject()
+                remove_co.id = part_name
+                remove_co.operation = CollisionObject.REMOVE
+                ps.world.collision_objects.append(remove_co)
+                
+                # Apply the complete scene update
+                scene.processPlanningSceneMsg(ps)
+                
+                self._apply_planning_scene(scene)
+                
+            self.get_logger().info(f"Successfully attached {part_name} to floor gripper")
+            return True
+                
         except Exception as e:
             self.get_logger().error(f"Error attaching model to gripper: {str(e)}")
+            return False
+
+    def _detach_object_from_floor_gripper(self, part_name):
+        """Detach an object from the floor robot gripper in the planning scene."""
+        self.get_logger().info(f"Detaching {part_name} from floor gripper")
+        
+        try:
+            with self._planning_scene_monitor.read_write() as scene:
+                # Detach object from robot
+                scene.detachObject(part_name, "floor_gripper")
+                scene.current_state.update()
+                
+                # Optionally remove the object from the world entirely
+                # Uncomment if you want the part to disappear after detachment
+                # collision_object = CollisionObject()
+                # collision_object.id = part_name
+                # collision_object.operation = CollisionObject.REMOVE
+                # scene.apply_collision_object(collision_object)
+                # scene.current_state.update()
+                
+            self.get_logger().info(f"Successfully detached {part_name} from floor gripper")
+            return True
+        
+        except Exception as e:
+            self.get_logger().error(f"Error detaching object from gripper: {str(e)}")
             return False
 
     def _floor_robot_change_gripper(self, station: str, gripper_type: str):
