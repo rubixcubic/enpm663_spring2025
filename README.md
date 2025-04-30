@@ -17,7 +17,7 @@ ros2 launch ariac_gazebo ariac.launch.py competitor_pkg:=moveit_demo trial_name:
 ```bash
 ros2 launch moveit_demo controller_demo.launch.py program:=python rviz:=true operation_mode:=pick_place_part
 ```
-  - Part pick-and-place (C++)
+    - Part pick-and-place (C++)
 ```bash
 ros2 launch moveit_demo controller_demo.launch.py program:=cpp rviz:=true operation_mode:=pick_place_part
 ```
