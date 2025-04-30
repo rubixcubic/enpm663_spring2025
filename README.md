@@ -1,5 +1,6 @@
 # Lecture 9 - Motion Planning
 
+## Build
 ```bash
 cd <workspace>
 rosdep install --from-paths src -y --ignore-src
@@ -8,11 +9,11 @@ colcon build
 source install/setup.bash
 ```
 
-* Start the environment:
+## Start the environment
 ```bash
 ros2 launch ariac_gazebo ariac.launch.py competitor_pkg:=moveit_demo trial_name:=kitting dev_mode:=True record_state:=false
 ```
-* Start the demo (choose one):
+## Start the demo (choose one):
 - Part pick-and-place (Python)
 ```bash
 ros2 launch moveit_demo controller_demo.launch.py program:=python rviz:=true operation_mode:=pick_place_part
