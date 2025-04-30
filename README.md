@@ -12,20 +12,20 @@ source install/setup.bash
 ```bash
 ros2 launch ariac_gazebo ariac.launch.py competitor_pkg:=moveit_demo trial_name:=kitting dev_mode:=True record_state:=false
 ```
-* Start the demo:
-  - Part pick-and-place (Python)
+* Start the demo (choose one):
+- Part pick-and-place (Python)
 ```bash
 ros2 launch moveit_demo controller_demo.launch.py program:=python rviz:=true operation_mode:=pick_place_part
 ```
-    - Part pick-and-place (C++)
+- Part pick-and-place (C++)
 ```bash
 ros2 launch moveit_demo controller_demo.launch.py program:=cpp rviz:=true operation_mode:=pick_place_part
 ```
-  - Tray pick-and-place (Python)
+- Tray pick-and-place (Python)
 ```bash
 ros2 launch moveit_demo controller_demo.launch.py program:=python rviz:=true operation_mode:=pick_place_tray
 ```
-  - Tray pick-and-place (C++)
+- Tray pick-and-place (C++)
 ```bash
 ros2 launch moveit_demo controller_demo.launch.py program:=cpp rviz:=true operation_mode:=pick_place_tray
 ```
