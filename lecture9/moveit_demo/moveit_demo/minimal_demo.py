@@ -380,15 +380,27 @@ class RobotController(Node):
     #                         self._start_operation()
 
     def _orders_cb(self, msg: OrderMsg):
-        """Callback for receiving orders"""
+        """
+        Callback function for processing incoming orders from the ARIAC competition.
+
+        This callback is triggered whenever a new order message is received on the
+        '/ariac/orders' topic. It adds the new order to the internal order queue
+        and logs basic information about the received order.
+
+        Args:
+            msg (OrderMsg): The order message containing order ID, type, and task details
+        """
         self._orders.append(msg)
         self.get_logger().info(f"Received order: {msg.id}, type: {msg.type}")
 
     def _kts1_camera_cb(self, msg: AdvancedLogicalCameraImageMsg):
-        """Callback for KTS1 camera images
+        """
+        Callback for processing images from the KTS1 (kitting tray station 1) camera.
 
-        This function processes incoming camera messages from the KTS1 (kitting tray station 1)
-        camera, storing tray poses and the camera's pose for later use in pick and place operations.
+        This function processes incoming camera messages from the KTS1 camera,
+        storing tray poses and the camera's pose for later use in pick and place operations.
+        Logs debug information about detected trays upon first reception and
+        when new trays are detected.
 
         Args:
             msg (AdvancedLogicalCameraImageMsg): Camera data containing tray information
@@ -414,10 +426,13 @@ class RobotController(Node):
                 )
 
     def _kts2_camera_cb(self, msg: AdvancedLogicalCameraImageMsg):
-        """Callback for KTS2 camera images
+        """
+        Callback for processing images from the KTS2 (kitting tray station 2) camera.
 
-        This function processes incoming camera messages from the KTS2 (kitting tray station 2)
-        camera, storing tray poses and the camera's pose for later use in pick and place operations.
+        This function processes incoming camera messages from the KTS2 camera,
+        storing tray poses and the camera's pose for later use in pick and place operations.
+        Logs debug information about detected trays upon first reception and
+        when new trays are detected.
 
         Args:
             msg (AdvancedLogicalCameraImageMsg): Camera data containing tray information
@@ -452,8 +467,8 @@ class RobotController(Node):
         and an error message if the service call itself encountered an exception.
 
         Args:
-        future (rclpy.task.Future): The Future object representing the result
-        of the asynchronous service call.
+            future (rclpy.task.Future): The Future object representing the result
+                                        of the asynchronous service call
         """
         try:
             # Attempt to get the result of the service call. This will raise an
@@ -474,17 +489,15 @@ class RobotController(Node):
 
     def _check_competition_ready(self):
         """
-        Timer callback function to periodically check the ARIAC competition state
-        and initiate the start of the competition if it's in the 'READY' state
-        and hasn't been started already.
+        Timer callback function to periodically check and start the ARIAC competition.
 
-        This function is triggered by a ROS 2 timer. It first checks if the
-        competition has already started. If not, it checks if the current state
-        is 'READY' and if a start request hasn't been sent yet. If both conditions
-        are true, it logs a message, sets the `_competition_start_requested` flag
-        to prevent multiple start attempts, checks if the start competition service
-        is available, creates a service request, and sends it asynchronously with
-        a callback function `_competition_start_callback` to handle the service response.
+        This function is triggered by a ROS 2 timer. It checks if the competition
+        has already started. If not, it checks if the current state is 'READY' and
+        if a start request hasn't been sent yet. If both conditions are true, it
+        attempts to start the competition by calling the start competition service.
+
+        The function handles service availability checking and sets up proper
+        callback handling for the asynchronous service response.
         """
         if self._competition_state == CompetitionStateMsg.STARTED:
             # Competition already started, disable timer
@@ -514,8 +527,16 @@ class RobotController(Node):
 
     def _control_cb(self):
         """
-        Timer callback function that defines the primary control logic for the robot
-        during the ARIAC competition.
+        Primary control loop timer callback for the robot controller.
+
+        This function manages the high-level control flow of the robot controller:
+        1. First attempts to add models to the planning scene if not already done
+        2. Waits for sensor data (camera images) to be available
+        3. Checks if competition state and orders are valid to start operations
+        4. Initiates the appropriate operation based on current mode
+
+        This function is called periodically via a timer to continuously check
+        system status and trigger operations when conditions are met.
         """
         # First attempt to add models to the planning scene if not already done
         if not self._objects_added_to_planning_scene:
@@ -558,8 +579,14 @@ class RobotController(Node):
         """
         Verify that the planning scene has the expected objects loaded.
 
+        Checks if all expected collision objects are present in the planning scene.
+        If objects are missing, attempts to diagnose the issue by checking the
+        YAML configuration. For debugging purposes, allows operation to continue
+        even with missing objects.
+
         Returns:
-            bool: True if planning scene is ready, False otherwise
+            bool: True if planning scene is ready or if continuing despite errors,
+                  False if critical errors prevent operation
         """
         try:
             # Check if we have objects in our tracking list
@@ -643,7 +670,7 @@ class RobotController(Node):
 
     def _add_models_to_planning_scene(self):
         """
-        Adds collision models to the MoveIt planning scene
+        Add collision models to the MoveIt planning scene.
 
         Populates the planning scene with collision objects for:
         - Bins (bins 1-8)
@@ -653,14 +680,18 @@ class RobotController(Node):
         - Kit tray tables (KTS1 and KTS2)
 
         These collision objects enable path planning with collision avoidance.
+        The function aggregates success status across all object additions.
+
+        Returns:
+            bool: True if all objects were added successfully, False otherwise
         """
         FancyLog.pscene(
             self.get_logger(), "Initializing planning scene with collision objects"
         )
-        
+
         # Start with success as True and maintain it only if all operations succeed
         success = True
-        
+
         # Add bins
         bin_positions = {
             "bin1": (-1.9, 3.375),
@@ -681,7 +712,9 @@ class RobotController(Node):
             bin_pose.orientation = quaternion_from_euler(0.0, 0.0, 3.14159)
 
             # Aggregate success status
-            success = success and self._add_model_to_planning_scene(bin_name, "bin.stl", bin_pose)
+            success = success and self._add_model_to_planning_scene(
+                bin_name, "bin.stl", bin_pose
+            )
 
         # Add assembly stations
         assembly_station_positions = {
@@ -720,8 +753,9 @@ class RobotController(Node):
                 # Aggregate success status
                 success = success and insert_success
             except Exception as e:
-                FancyLog.warn(self.get_logger(),
-                    f"Failed to add assembly insert {insert_name}: {e}"
+                FancyLog.warn(
+                    self.get_logger(),
+                    f"Failed to add assembly insert {insert_name}: {e}",
                 )
                 # Mark failure but continue with other objects
                 success = False
@@ -734,7 +768,9 @@ class RobotController(Node):
         conveyor_pose.orientation = quaternion_from_euler(0.0, 0.0, 0.0)
 
         # Aggregate success status
-        success = success and self._add_model_to_planning_scene("conveyor", "conveyor.stl", conveyor_pose)
+        success = success and self._add_model_to_planning_scene(
+            "conveyor", "conveyor.stl", conveyor_pose
+        )
 
         # Add kit tray tables
         kts1_table_pose = Pose()
@@ -764,12 +800,24 @@ class RobotController(Node):
             self._refresh_planning_scene_display()
             # time.sleep(0.5)
         else:
-            FancyLog.error(self.get_logger(), "Planning scene initialization incomplete - some objects failed to load")
-        
+            FancyLog.error(
+                self.get_logger(),
+                "Planning scene initialization incomplete - some objects failed to load",
+            )
+
         return success
 
     def _start_operation(self):
-        """Start the selected operation based on the current mode."""
+        """
+        Start the selected operation based on the current mode.
+
+        This function dispatches to the appropriate operation handler based on
+        the value of _current_operation_mode. Currently supports:
+        - 'pick_place_tray': Execute tray pick and place operation
+        - 'pick_place_part': Execute part pick and place operation
+
+        Logs errors for unknown operation modes.
+        """
 
         FancyLog.info(
             self.get_logger(), f"Starting operation: {self._current_operation_mode}"
@@ -791,7 +839,19 @@ class RobotController(Node):
             )
 
     def _execute_pick_place_tray_operation(self):
-        """Execute tray pick and place operation."""
+        """
+        Execute tray pick and place operation.
+
+        This function:
+        1. Gets the first order from the order queue
+        2. Verifies it's a kitting task
+        3. Picks and places a tray on the specified AGV
+        4. Returns to home position
+        5. Ends the competition
+
+        Returns:
+            bool: True if operation completed successfully, False otherwise
+        """
 
         # Get the first order
         if self._orders:
@@ -827,7 +887,21 @@ class RobotController(Node):
         return success
 
     def _execute_pick_place_part_operation(self):
-        """Execute part pick and place operation."""
+        """
+        Execute part pick and place operation.
+
+        This function:
+        1. Gets the first order from the order queue
+        2. Verifies it's a kitting task
+        3. Selects a random part from bins to pick up
+        4. Picks the part from its bin location
+        5. Places the part on a random quadrant of the AGV's kit tray
+        6. Returns to home position
+        7. Ends the competition
+
+        Returns:
+            bool: True if operation completed successfully, False otherwise
+        """
 
         # Get the first order
         if self._orders:
@@ -896,7 +970,16 @@ class RobotController(Node):
         return success
 
     def _floor_robot_pick_and_place_tray(self, tray_id, agv_num):
-        """Pick a tray and place it on the specified AGV.
+        """
+        Pick a tray and place it on the specified AGV.
+
+        This function implements the complete process of:
+        1. Locating a tray by ID on either station KTS1 or KTS2
+        2. Moving to the appropriate kit tray table
+        3. Changing to tray gripper if needed
+        4. Approaching and picking up the tray
+        5. Moving to the target AGV
+        6. Placing and locking the tray on the AGV
 
         Args:
             tray_id (int): ID of the tray to pick
@@ -1053,7 +1136,19 @@ class RobotController(Node):
         return True
 
     def _lock_agv_tray(self, agv_num):
-        """Lock tray to AGV."""
+        """
+        Lock a tray to the specified AGV.
+
+        This function sends an asynchronous service request to lock a tray
+        to the specified AGV, preventing it from moving during transport.
+
+        Args:
+            agv_num (int): The AGV number (1-4) to lock the tray on
+
+        Returns:
+            bool: True if the service call was initiated successfully,
+                  False if the service client was not available
+        """
         self.get_logger().info(f"Locking tray to AGV {agv_num}")
 
         if agv_num not in self._lock_agv_tray_clients:
@@ -1073,7 +1168,16 @@ class RobotController(Node):
         return True
 
     def _lock_agv_tray_callback(self, future, agv_num):
-        """Callback for lock tray service."""
+        """
+        Callback for the lock tray service response.
+
+        This function processes the result of the asynchronous lock tray
+        service call, logging success or failure messages.
+
+        Args:
+            future (rclpy.task.Future): The Future object containing the service response
+            agv_num (int): The AGV number the lock operation was performed on
+        """
         try:
             result = future.result()
             if result.success:
@@ -1084,7 +1188,19 @@ class RobotController(Node):
             self.get_logger().error(f"Error calling lock tray service: {str(e)}")
 
     def _unlock_agv_tray(self, agv_num):
-        """Unlock tray from AGV."""
+        """
+        Unlock a tray from the specified AGV.
+
+        This function sends an asynchronous service request to unlock a tray
+        from the specified AGV, allowing it to be removed.
+
+        Args:
+            agv_num (int): The AGV number (1-4) to unlock the tray from
+
+        Returns:
+            bool: True if the service call was initiated successfully,
+                  False if the service client was not available
+        """
         self.get_logger().info(f"Unlocking tray from AGV {agv_num}")
 
         if agv_num not in self._unlock_agv_tray_clients:
@@ -1102,7 +1218,16 @@ class RobotController(Node):
         return True
 
     def _unlock_agv_tray_callback(self, future, agv_num):
-        """Callback for unlock tray service."""
+        """
+        Callback for the unlock tray service response.
+
+        This function processes the result of the asynchronous unlock tray
+        service call, logging success or failure messages.
+
+        Args:
+            future (rclpy.task.Future): The Future object containing the service response
+            agv_num (int): The AGV number the unlock operation was performed on
+        """
         try:
             result = future.result()
             if result.success:
@@ -1113,7 +1238,24 @@ class RobotController(Node):
             self.get_logger().error(f"Error calling unlock tray service: {str(e)}")
 
     def _floor_robot_place_part_on_kit_tray(self, agv_num, quadrant):
-        """Place a part on a kit tray on the specified AGV in the given quadrant."""
+        """
+        Place a part on a kit tray on the specified AGV in the given quadrant.
+
+        This function handles the complete process of:
+        1. Verifying a part is currently attached to the gripper
+        2. Validating AGV number and quadrant parameters
+        3. Moving to the AGV using joint space planning
+        4. Positioning the part above the target quadrant using Cartesian planning
+        5. Lowering the part into place on the tray
+        6. Releasing the part and retreating to a safe position
+
+        Args:
+            agv_num (int): AGV number (1-4) to place the part on
+            quadrant (int): Quadrant number (1-4) of the tray to place the part in
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
         if (
             not self._floor_robot_gripper_state
             or not self._floor_robot_gripper_state.attached
@@ -1236,9 +1378,24 @@ class RobotController(Node):
             self.get_logger().error(f"Error placing part: {str(e)}")
             return False
 
-
     def _create_mesh_collision_object(self, name, mesh_path, pose, frame_id="world"):
-        """Create a collision object from a mesh file with better error handling."""
+        """
+        Create a collision object from a mesh file with robust error handling.
+
+        This function loads a mesh file using pyassimp and creates a CollisionObject
+        message containing the mesh for use in the planning scene. It includes
+        comprehensive error handling to catch issues with mesh loading or processing.
+
+        Args:
+            name (str): Unique identifier for the collision object
+            mesh_path (str): File path to the mesh file
+            pose (Pose): Position and orientation of the object
+            frame_id (str, optional): Reference frame for the object. Defaults to "world".
+
+        Returns:
+            CollisionObject: The created collision object ready for planning scene addition,
+                             or None if an error occurred
+        """
         try:
             # Create the collision object
             co = CollisionObject()
@@ -1294,16 +1451,19 @@ class RobotController(Node):
         """
         Add a mesh model to the planning scene using the PlanningSceneMonitor.
 
+        This function creates a collision object from a mesh file and adds it
+        to the planning scene for collision checking during motion planning.
+
         Args:
-            name: Name of the collision object
-            mesh_file: Path to the mesh file
-            model_pose: Pose of the model
-            frame_id: Frame ID for the collision object
+            name (str): Unique identifier for the collision object
+            mesh_file (str): File name of the mesh in the meshes directory
+            model_pose (Pose): Position and orientation of the object
+            frame_id (str, optional): Reference frame for the object. Defaults to "world".
 
         Returns:
-            bool: True if successful, False otherwise
+            bool: True if the object was successfully added, False otherwise
         """
-        FancyLog.pscene(self.get_logger(),f"Adding model {name} to planning scene")
+        FancyLog.pscene(self.get_logger(), f"Adding model {name} to planning scene")
 
         try:
             # Get the full path to the mesh file
@@ -1347,9 +1507,14 @@ class RobotController(Node):
             return False
 
     def _competition_state_cb(self, msg: CompetitionStateMsg):
-        """Callback for the topic /ariac/competition_state
-        Arguments:
-            msg -- CompetitionState message
+        """
+        Callback for the /ariac/competition_state topic.
+
+        This function processes competition state updates, logging state changes
+        and storing the current state for use in decision making.
+
+        Args:
+            msg (CompetitionStateMsg): Message containing the current competition state
         """
         # Log if competition state has changed
         if self._competition_state != msg.competition_state:
@@ -1369,7 +1534,13 @@ class RobotController(Node):
         #     self._operation_started = True
 
     def _end_competition(self):
-        """End the competition using a non-blocking approach."""
+        """
+        End the competition using a non-blocking approach.
+
+        This function initiates an asynchronous service call to the
+        '/ariac/end_competition' service, setting up proper callback
+        handling for the service response.
+        """
         self.get_logger().info("Ending competition")
 
         # Check if service is available
@@ -1387,7 +1558,15 @@ class RobotController(Node):
         future.add_done_callback(self._end_competition_callback)
 
     def _end_competition_callback(self, future):
-        """Callback for competition end service."""
+        """
+        Callback for competition end service response.
+
+        This function processes the result of the asynchronous end competition
+        service call, logging appropriate messages based on the result.
+
+        Args:
+            future (rclpy.task.Future): The Future object containing the service response
+        """
         try:
             result = future.result()
             if result.success:
@@ -1398,23 +1577,58 @@ class RobotController(Node):
             self.get_logger().error(f"End competition service call failed: {e}")
 
     def _floor_robot_gripper_state_cb(self, msg: VacuumGripperState):
-        """Callback for the topic /ariac/floor_robot_gripper_state
+        """
+        Callback for the /ariac/floor_robot_gripper_state topic.
 
-        Arguments:
-            msg -- VacuumGripperState message
+        This function processes gripper state updates, storing the current
+        gripper state for use in decision making and planning.
+
+        Args:
+            msg (VacuumGripperState): Message containing the current gripper state
         """
         self._floor_robot_gripper_state = msg
 
     def _left_bins_camera_cb(self, msg: AdvancedLogicalCameraImageMsg):
+        """
+        Callback for the left bins camera images.
+
+        This function processes camera data from the left bins camera,
+        storing part poses and the camera pose for later use in pick operations.
+
+        Args:
+            msg (AdvancedLogicalCameraImageMsg): Camera data containing part information
+        """
         self._left_bins_parts = msg.part_poses
         self._left_bins_camera_pose = msg.sensor_pose
 
     def _right_bins_camera_cb(self, msg: AdvancedLogicalCameraImageMsg):
+        """
+        Callback for the right bins camera images.
+
+        This function processes camera data from the right bins camera,
+        storing part poses and the camera pose for later use in pick operations.
+
+        Args:
+            msg (AdvancedLogicalCameraImageMsg): Camera data containing part information
+        """
         self._right_bins_parts = msg.part_poses
         self._right_bins_camera_pose = msg.sensor_pose
 
     def _set_floor_robot_gripper_state(self, state):
-        """Control gripper state and update planning scene when detaching objects."""
+        """
+        Control the floor robot gripper and update planning scene when detaching objects.
+
+        This function sends a service request to enable or disable the vacuum gripper.
+        When disabling the gripper, it also updates the planning scene to detach any
+        attached parts.
+
+        Args:
+            state (bool): True to enable the gripper, False to disable
+
+        Returns:
+            Future: The Future object for the service call, or None if the gripper
+                    is already in the requested state
+        """
         if self._floor_robot_gripper_state.enabled == state:
             self.get_logger().debug(f"Gripper is already {self._gripper_states[state]}")
             return None
@@ -1450,10 +1664,14 @@ class RobotController(Node):
         return future
 
     def _gripper_state_callback(self, future):
-        """Callback for gripper state change service.
+        """
+        Callback for gripper state change service response.
 
-        Arguments:
-            future -- Future object from the service call
+        This function processes the result of the asynchronous gripper control
+        service call, logging appropriate messages based on the result.
+
+        Args:
+            future (rclpy.task.Future): The Future object containing the service response
         """
         try:
             response = future.result()
@@ -1472,11 +1690,19 @@ class RobotController(Node):
         """
         Move the floor robot along a Cartesian path with optimized speed.
 
+        This function plans and executes a Cartesian path through the specified
+        waypoints, applying velocity and acceleration scaling factors for
+        performance optimization.
+
         Args:
-            waypoints: List of waypoint poses
-            velocity: Maximum velocity scaling factor (0.0-1.0)
-            acceleration: Maximum acceleration scaling factor (0.0-1.0)
-            avoid_collision: Whether to avoid collisions
+            waypoints (list): List of Pose objects defining the path
+            velocity (float): Maximum velocity scaling factor (0.0-1.0)
+            acceleration (float): Maximum acceleration scaling factor (0.0-1.0)
+            avoid_collision (bool, optional): Whether to avoid collisions during
+                                              path planning. Defaults to True.
+
+        Returns:
+            bool: True if path execution succeeded, False otherwise
         """
         # Increase default velocity and acceleration for faster movement
         velocity = max(0.5, velocity)  # Minimum velocity scaling of 0.5
@@ -1507,10 +1733,17 @@ class RobotController(Node):
             return False
 
     def _execute_cartesian_trajectory(self, trajectory_msg):
-        """Execute a cartesian trajectory once it's computed.
+        """
+        Execute a pre-computed Cartesian trajectory.
+
+        This function takes a trajectory message returned from the Cartesian
+        path planning service and executes it on the robot.
 
         Args:
-            trajectory_msg: The computed trajectory message or None if failed
+            trajectory_msg: The computed trajectory message or None if planning failed
+
+        Returns:
+            bool: True if execution succeeded, False otherwise
         """
         if trajectory_msg is None:
             self.get_logger().error("Failed to get cartesian path, cannot execute")
@@ -1543,6 +1776,22 @@ class RobotController(Node):
         avoid_collision: bool,
         robot: str,
     ):
+        """
+        Call the compute_cartesian_path service to generate a Cartesian trajectory.
+
+        This function creates and sends a request to the GetCartesianPath service,
+        configuring path constraints and parameters as specified.
+
+        Args:
+            waypoints (list): List of Pose objects defining the path
+            max_velocity_scaling_factor (float): Maximum velocity scaling (0.0-1.0)
+            max_acceleration_scaling_factor (float): Maximum acceleration scaling (0.0-1.0)
+            avoid_collision (bool): Whether to avoid collisions during planning
+            robot (str): Robot name to plan for (e.g., "floor_robot")
+
+        Returns:
+            trajectory_msg: The computed trajectory message, or None if planning failed
+        """
         self.get_logger().debug(
             "Getting cartesian path"
         )  # Use debug level for less logging
@@ -1603,7 +1852,25 @@ class RobotController(Node):
         multi_plan_parameters=None,
         sleep_time=0.0,
     ):
-        """Optimized helper function to plan and execute a motion."""
+        """
+        Plan and execute a motion with comprehensive error handling and performance monitoring.
+
+        This helper function handles the complete process of motion planning and execution,
+        with detailed logging and timing for performance analysis. It supports both
+        single and multi-plan parameter modes for flexible motion specification.
+
+        Args:
+            robot: The MoveItPy robot object to execute on
+            planning_component: The planning component to use for planning
+            logger: Logger object for outputting status messages
+            robot_type (str): Type of robot (e.g., "floor_robot")
+            single_plan_parameters (dict, optional): Parameters for single plan mode
+            multi_plan_parameters (dict, optional): Parameters for multi-plan mode
+            sleep_time (float, optional): Time to sleep after execution. Defaults to 0.0.
+
+        Returns:
+            bool: True if planning and execution succeeded, False otherwise
+        """
         # plan to goal
         logger.debug("Planning trajectory")  # Change to debug level
 
@@ -1656,10 +1923,17 @@ class RobotController(Node):
             return False
 
     def _move_floor_robot_to_pose(self, pose: Pose):
-        """Move the floor robot to a pose in Cartesian space.
+        """
+        Move the floor robot to a target pose in Cartesian space.
+
+        This function plans and executes a motion to move the robot's end effector
+        to the specified pose. It includes retry logic to handle planning failures.
 
         Args:
-            pose (Pose): Target pose
+            pose (Pose): Target pose for the robot's end effector
+
+        Returns:
+            bool: True if the motion succeeded, False otherwise
         """
         with self._planning_scene_monitor.read_write() as scene:
             self._floor_robot.set_start_state(robot_state=scene.current_state)
@@ -1692,7 +1966,24 @@ class RobotController(Node):
         return False
 
     def _floor_robot_wait_for_attach(self, timeout: float, orientation: Quaternion):
-        """More efficient wait for attachment with fewer intermediate moves"""
+        """
+        Wait for a part to attach to the gripper, making small downward movements if needed.
+
+        This function implements an adaptive approach to part attachment:
+        1. First waits briefly to see if the part attaches immediately
+        2. If not, makes small incremental downward movements
+        3. Continues until attachment is detected or timeout is reached
+
+        Args:
+            timeout (float): Maximum time in seconds to wait for attachment
+            orientation (Quaternion): Orientation to maintain during movements
+
+        Returns:
+            bool: True if part attached successfully
+
+        Raises:
+            Error: If timeout is reached or attachment fails after max retries
+        """
         with self._planning_scene_monitor.read_write() as scene:
             current_pose = scene.current_state.get_pose("floor_gripper")
 
@@ -1738,13 +2029,19 @@ class RobotController(Node):
         return True
 
     def _create_floor_joint_position_state(self, joint_positions: list) -> dict:
-        """Create a dictionary of joint positions for the floor robot.
+        """
+        Create a dictionary of joint positions for the floor robot.
+
+        This helper function converts a list of joint positions to a dictionary
+        mapping joint names to position values for use in motion planning.
 
         Args:
-            joint_positions (list): List of joint positions
+            joint_positions (list): List of 7 joint positions in order:
+                                   [linear_actuator, shoulder_pan, shoulder_lift,
+                                    elbow, wrist_1, wrist_2, wrist_3]
 
         Returns:
-            dict: Dictionary of joint names and positions
+            dict: Dictionary mapping joint names to position values
         """
         return {
             "linear_actuator_joint": joint_positions[0],
@@ -1757,6 +2054,24 @@ class RobotController(Node):
         }
 
     def _make_mesh(self, name, pose, filename, frame_id) -> CollisionObject:
+        """
+        Create a collision object from a mesh file.
+
+        This function loads a mesh file using pyassimp and creates a CollisionObject
+        message containing the mesh for use in the planning scene.
+
+        Args:
+            name (str): Unique identifier for the collision object
+            pose (Pose): Position and orientation of the object
+            filename (str): File path to the mesh file
+            frame_id (str): Reference frame for the object
+
+        Returns:
+            CollisionObject: The created collision object ready for planning scene addition
+
+        Raises:
+            AssertionError: If no meshes are found in the file
+        """
         with pyassimp.load(filename) as scene:
             assert len(scene.meshes), "No meshes found in the file"
 
@@ -1793,7 +2108,22 @@ class RobotController(Node):
             return o
 
     def _make_attached_mesh(self, name, pose, filename, robot):
-        """Create an attached mesh collision object."""
+        """
+        Create an attached collision object from a mesh file.
+
+        This function loads a mesh file and creates an AttachedCollisionObject
+        message for a part attached to the robot's gripper.
+
+        Args:
+            name (str): Unique identifier for the collision object
+            pose (Pose): Position and orientation of the object
+            filename (str): File path to the mesh file
+            robot (str): Robot name (e.g., "floor_robot")
+
+        Returns:
+            AttachedCollisionObject: The created attached collision object,
+                                    or None if an error occurred
+        """
         try:
             with pyassimp.load(filename) as scene:
                 if not scene.meshes:
@@ -1842,7 +2172,18 @@ class RobotController(Node):
             return None
 
     def _apply_planning_scene(self, scene):
-        """Apply a planning scene with better timeout handling."""
+        """
+        Apply a planning scene with robust timeout handling.
+
+        This function sends a planning scene to the ApplyPlanningScene service
+        with optimized timeout handling for more responsive operation.
+
+        Args:
+            scene (PlanningScene): The planning scene to apply
+
+        Returns:
+            bool: True if the planning scene was successfully applied, False otherwise
+        """
         try:
             # Create a client for the service
             apply_planning_scene_client = self.create_client(
@@ -1882,9 +2223,7 @@ class RobotController(Node):
                 self.get_logger().info("Successfully applied planning scene")
                 return True
             else:
-                self.get_logger().warn(
-                    "Failed to apply planning scene via service"
-                )
+                self.get_logger().warn("Failed to apply planning scene via service")
                 # Try direct publishing as a fallback
                 # self._direct_publish_planning_scene(scene)
                 return True
@@ -1894,7 +2233,15 @@ class RobotController(Node):
             return False
 
     def _direct_publish_planning_scene(self, scene):
-        """Publish planning scene directly to the planning scene topic."""
+        """
+        Publish planning scene directly to the planning scene topic.
+
+        This function bypasses the service-based planning scene application
+        and publishes directly to the topic for faster operation or as a fallback.
+
+        Args:
+            scene (PlanningScene): The planning scene to publish
+        """
         if not hasattr(self, "_planning_scene_publisher"):
             self._planning_scene_publisher = self.create_publisher(
                 PlanningScene, "/planning_scene", 10
@@ -1916,13 +2263,24 @@ class RobotController(Node):
         )
 
     def _refresh_planning_scene_display(self):
-        """Force a refresh of the planning scene display in RViz."""
+        """
+        Force a refresh of the planning scene display in RViz.
+
+        This function creates and applies an empty differential planning scene
+        to trigger a visual update of the planning scene in visualization tools.
+        """
         # Create an empty diff planning scene just to trigger a display update
         refresh_scene = PlanningScene()
         refresh_scene.is_diff = True
         self._apply_planning_scene(refresh_scene)
 
     def _remove_model_from_floor_gripper(self):
+        """
+        Remove any attached models from the floor robot gripper in the planning scene.
+
+        This function clears all attached collision objects from the robot's
+        gripper in the planning scene, updating the internal planning scene state.
+        """
         self.get_logger().info("Removing attached part from floor gripper")
         temp_scene = copy(self.planning_scene_msg)
         with self._planning_scene_monitor.read_write() as scene:
@@ -1934,10 +2292,14 @@ class RobotController(Node):
             self._ariac_robots_state = scene.current_state
 
     def _floor_robot_move_to_target(self):
-        """Plan and execute movement to the current target
+        """
+        Plan and execute movement to the currently set target with retry logic.
+
+        This function attempts to plan and execute a motion to the currently
+        configured target, with multiple retries in case of planning failures.
 
         Returns:
-            bool: True if successful, False otherwise
+            bool: True if the motion succeeded, False otherwise
         """
         max_attempts = 3
         for attempt in range(1, max_attempts + 1):
@@ -1978,7 +2340,19 @@ class RobotController(Node):
         return False
 
     def _move_floor_robot_to_joint_position(self, position_name: str):
-        """Move the floor robot to a predefined joint position."""
+        """
+        Move the floor robot to a predefined joint position.
+
+        This function plans and executes a motion to move the robot to a named
+        joint position configuration, either from predefined positions or
+        a special "home" position.
+
+        Args:
+            position_name (str): Name of the predefined position or "home"
+
+        Returns:
+            bool: True if the motion succeeded, False otherwise
+        """
         self.get_logger().info(f"Moving to position: {position_name}")
 
         try:
@@ -2047,7 +2421,21 @@ class RobotController(Node):
 
     def _floor_robot_pick_bin_part(self, part_to_pick: PartMsg):
         """
-        Pick a part from a bin using Cartesian space programming with improved speed.
+        Pick a part from a bin using optimized Cartesian motion planning.
+
+        This function implements a complete part picking process:
+        1. PART DETECTION - Locates the specified part in bins using camera data
+        2. GRIPPER PREPARATION - Changes to part gripper if needed
+        3. APPROACH - Moves to bin and positions above part
+        4. PICKING - Moves down to grasp position and enables gripper
+        5. RETREAT - Lifts part and returns to safe bin position
+        6. SCENE UPDATE - Updates planning scene with attached part
+
+        Args:
+            part_to_pick (PartMsg): Part type and color to pick
+
+        Returns:
+            bool: True if pick operation succeeded, False otherwise
         """
         # Skip unnecessary debug logging for faster operation
         self.get_logger().info(
@@ -2105,20 +2493,37 @@ class RobotController(Node):
         # Move to the bin with the part
         self._move_floor_robot_to_joint_position(bin_side)
 
-        # Calculate gripper orientation
+        # Calculate the proper orientation for the robot's gripper to pick up a part.
+
+        # This line extracts the yaw angle (rotation around the z-axis) from the part's orientation.
+        # 1. part_pose.orientation contains a quaternion, which is a 4-element representation of 3D rotation (x, y, z, w)
+        # 2. The function rpy_from_quaternion() converts this quaternion into Euler angles (roll, pitch, yaw)
+        # 3. [2] retrieves the third element of the returned array, which is the yaw angle (rotation around the z-axis)
+        # This yaw angle represents how the part is rotated on the horizontal plane, which is important for properly aligning the gripper.
         part_rotation = rpy_from_quaternion(part_pose.orientation)[2]
+        # This line creates a new quaternion for the gripper's orientation that will be appropriate for grasping the part.
+        # quaternion_from_euler() converts Euler angles back to a quaternion
+        # Parameters represent:
+        # 1. Roll (0.0): No rotation around x-axis
+        # 2. Pitch (pi): 180° rotation around y-axis, pointing the gripper downward
+        # 3. Yaw (part_rotation): Uses the part's yaw rotation so the gripper aligns with the part
         gripper_orientation = quaternion_from_euler(0.0, pi, part_rotation)
 
         # Move above the part - use closer approach to save time
+        # We place the gripper 15 cm above the part.
         above_pose = build_pose(
             part_pose.position.x,
             part_pose.position.y,
             part_pose.position.z + 0.15,  # Reduced from 0.3 to 0.15
             gripper_orientation,
         )
+        # Sets a target pose in Cartesian space
+        # Lets the motion planner (MoveIt) determine the optimal path
+        # The planner will typically find a path that's efficient in joint space, but the goal is specified in Cartesian space
+        # Doesn't give explicit control over the path shape
         self._move_floor_robot_to_pose(above_pose)
 
-        # PICKING PHASE - Faster movement down
+        # PICKING PHASE - Getting closer to the part
         self.get_logger().info("Moving to grasp position")
         waypoints = [
             build_pose(
@@ -2127,17 +2532,19 @@ class RobotController(Node):
                 # Optimize height for better first-attempt success
                 part_pose.position.z
                 + RobotController._part_heights[part_to_pick.type]
-                + 0.005,
+                + 0.005,  # You can adjust this value
                 gripper_orientation,
             )
         ]
-        # Use faster movement for approach
+        # Enforces a straight-line path in Cartesian space
+        # Gives explicit control over velocity and acceleration
+        # Can specify whether collision checking should be performed
+        # Constraints the motion to follow a specific path, not just reach a goal
         self._move_floor_robot_cartesian(waypoints, 0.3, 0.3, False)
 
         # Enable gripper with less waiting
         self._set_floor_robot_gripper_state(True)
 
-        # More efficient attachment process with shorter timeout
         try:
             self._floor_robot_wait_for_attach(
                 10.0, gripper_orientation
@@ -2154,9 +2561,7 @@ class RobotController(Node):
                     gripper_orientation,
                 )
             ]
-            self._move_floor_robot_cartesian(
-                waypoints, 0.5, 0.5, False
-            )  # Faster retreat
+            self._move_floor_robot_cartesian(waypoints, 0.5, 0.5, False)
             self._set_floor_robot_gripper_state(False)
             return False
 
@@ -2185,7 +2590,20 @@ class RobotController(Node):
         return True
 
     def _attach_model_to_floor_gripper(self, part_to_pick: PartMsg, part_pose: Pose):
-        """Attach a part to the floor gripper in the planning scene."""
+        """
+        Attach a part model to the floor robot gripper in the planning scene.
+
+        This function creates a collision object for the part and attaches it
+        to the robot's gripper in the planning scene, enabling collision-aware
+        motion planning with the attached part.
+
+        Args:
+            part_to_pick (PartMsg): Part type and color information
+            part_pose (Pose): Position and orientation of the part
+
+        Returns:
+            bool: True if attachment succeeded, False otherwise
+        """
         # Create a part name based on its color and type
         part_name = (
             self._part_colors[part_to_pick.color]
@@ -2250,51 +2668,74 @@ class RobotController(Node):
 
                 # First add to world - this is important!
                 scene.apply_collision_object(co)
-                
+
                 # Then create the attachment
                 aco = AttachedCollisionObject()
                 aco.link_name = "floor_gripper"
                 aco.object = co
-                aco.touch_links = ["floor_gripper", "floor_tool0", "floor_wrist_3_link", 
-                                "floor_wrist_2_link", "floor_wrist_1_link", "floor_flange", "floor_ft_frame"]
-                
+                aco.touch_links = [
+                    "floor_gripper",
+                    "floor_tool0",
+                    "floor_wrist_3_link",
+                    "floor_wrist_2_link",
+                    "floor_wrist_1_link",
+                    "floor_flange",
+                    "floor_ft_frame",
+                ]
+
                 # Update the state
-                scene.current_state.attachBody(part_name, "floor_gripper", aco.touch_links)
+                scene.current_state.attachBody(
+                    part_name, "floor_gripper", aco.touch_links
+                )
                 scene.current_state.update()
-                
+
                 # Make the attachment visible in the planning scene
                 ps = PlanningScene()
                 ps.is_diff = True
                 ps.robot_state.attached_collision_objects.append(aco)
-                
+
                 # Remove from world collision objects since it's now attached
                 remove_co = CollisionObject()
                 remove_co.id = part_name
                 remove_co.operation = CollisionObject.REMOVE
                 ps.world.collision_objects.append(remove_co)
-                
+
                 # Apply the complete scene update
                 scene.processPlanningSceneMsg(ps)
-                
+
                 self._apply_planning_scene(scene)
-                
-            self.get_logger().info(f"Successfully attached {part_name} to floor gripper")
+
+            self.get_logger().info(
+                f"Successfully attached {part_name} to floor gripper"
+            )
             return True
-                
+
         except Exception as e:
             self.get_logger().error(f"Error attaching model to gripper: {str(e)}")
             return False
 
     def _detach_object_from_floor_gripper(self, part_name):
-        """Detach an object from the floor robot gripper in the planning scene."""
+        """
+        Detach an object from the floor robot gripper in the planning scene.
+
+        This function removes the attachment between the robot's gripper and
+        the specified object in the planning scene, while optionally keeping
+        the object in the world model.
+
+        Args:
+            part_name (str): Name of the part to detach
+
+        Returns:
+            bool: True if detachment succeeded, False otherwise
+        """
         self.get_logger().info(f"Detaching {part_name} from floor gripper")
-        
+
         try:
             with self._planning_scene_monitor.read_write() as scene:
                 # Detach object from robot
                 scene.detachObject(part_name, "floor_gripper")
                 scene.current_state.update()
-                
+
                 # Optionally remove the object from the world entirely
                 # Uncomment if you want the part to disappear after detachment
                 # collision_object = CollisionObject()
@@ -2302,23 +2743,32 @@ class RobotController(Node):
                 # collision_object.operation = CollisionObject.REMOVE
                 # scene.apply_collision_object(collision_object)
                 # scene.current_state.update()
-                
-            self.get_logger().info(f"Successfully detached {part_name} from floor gripper")
+
+            self.get_logger().info(
+                f"Successfully detached {part_name} from floor gripper"
+            )
             return True
-        
+
         except Exception as e:
             self.get_logger().error(f"Error detaching object from gripper: {str(e)}")
             return False
 
     def _floor_robot_change_gripper(self, station: str, gripper_type: str):
-        """Change the gripper on the floor robot.
+        """
+        Change the gripper on the floor robot.
+
+        This function implements the complete gripper changing process:
+        1. Gets the pose of the tool changer frame
+        2. Moves the robot to the tool changer station
+        3. Calls the gripper change service
+        4. Moves away from the tool changer
 
         Args:
             station (str): Station to change gripper at ("kts1" or "kts2")
             gripper_type (str): Type of gripper to change to ("trays" or "parts")
 
         Returns:
-            bool: True if successful, False otherwise
+            bool: True if gripper change succeeded, False otherwise
         """
         FancyLog.info(self.get_logger(), f"Changing gripper to type: {gripper_type}")
 
@@ -2432,13 +2882,20 @@ class RobotController(Node):
         return True
 
     def _frame_world_pose(self, frame_id: str):
-        """Get the pose of a frame in the world frame.
+        """
+        Get the pose of a frame in the world frame using TF2.
+
+        This function uses the TF2 library to look up the transform between
+        the world frame and the specified frame, converting it to a Pose message.
 
         Args:
-            frame_id (str): Frame ID to get pose for
+            frame_id (str): Target frame ID to get pose for
 
         Returns:
             Pose: Pose of the frame in the world frame
+
+        Raises:
+            Exception: If the transform lookup fails
         """
         self.get_logger().info(f"Getting transform for frame: {frame_id}")
 
@@ -2452,8 +2909,10 @@ class RobotController(Node):
 
             # Wait synchronously for the transform
             timeout = rclpy.duration.Duration(seconds=2.0)
-            t = self._tf_buffer.lookup_transform("world", frame_id, rclpy.time.Time(), timeout)
-  
+            t = self._tf_buffer.lookup_transform(
+                "world", frame_id, rclpy.time.Time(), timeout
+            )
+
         except Exception as e:
             self.get_logger().error(f"Failed to get transform for {frame_id}: {str(e)}")
             raise
@@ -2467,6 +2926,15 @@ class RobotController(Node):
         return pose
 
     def load_part_templates(self):
+        """
+        Load part template images for computer vision-based part detection.
+
+        This function loads template images for different part types from the
+        resources directory for use in template matching and part detection.
+
+        Returns:
+            bool: True if all templates were loaded successfully, False otherwise
+        """
         try:
             self.sensor_template = cv2.imread(
                 path.join(

@@ -51,67 +51,20 @@
 #include <geometry_msgs/msg/pose.hpp>
 
 /**
- * @brief Picks up a kit tray from a kitting tray station and places it on an AGV
+ * @class RobotController
+ * @brief Controller for managing robots in the ARIAC competition environment
  *
- * This function handles the complete workflow for picking a kit tray from either kitting station
- * and placing it on the specified AGV. The process includes:
- * - Locating the tray on either KTS1 or KTS2 stations
- * - Moving the floor robot to the appropriate station
- * - Ensuring the correct gripper is attached
- * - Picking up the tray with adaptive grasping strategies
- * - Transporting the tray to the AGV
- * - Precise placement of the tray on the AGV
- * - Locking the tray to the AGV
- *
- * The function implements a multi-stage approach for both pickup and placement with
- * several error recovery mechanisms to handle potential failures.
- *
- * @param tray_id The ID of the kit tray to pick up
- * @param agv_num The AGV number (1-4) where the tray should be placed
- *
- * @return bool True if the operation was successful, false otherwise
- *
- * @throws None directly, but logs errors when encountering issues
- *
- * @note This function includes multiple safeguards and recovery mechanisms:
- *   - Thread-safe access to shared tray data using mutexes
- *   - Multi-stage approach for reliable tray pickup
- *   - Adaptive retries if station movement fails
- *   - Automated gripper type switching when needed
- *   - Attachment verification using FloorRobotWaitForAttach
- *   - Multi-stage placement with precision control
- *   - Automatic collision avoidance through planning scene updates
- *
- * @warning Requires proper initialization of the robot controller and its subscribers
- *          before execution
- *
- * @see FloorRobotWaitForAttach
- * @see FloorRobotSetGripperState
- * @see FloorRobotChangeGripper
- * @see LockAGVTray
+ * This class provides a comprehensive robot control system for the ARIAC competition,
+ * managing both floor and ceiling robots, planning scenes, gripper operations,
+ * and order processing workflows.
  */
 class RobotController : public rclcpp::Node
 {
 public:
     /// Constructor
     RobotController();
-
     /// Destructor
     ~RobotController();
-    /**
-     * @brief Adds collision models to the MoveIt planning scene
-     *
-     * Populates the planning scene with collision objects for:
-     * - Bins (bins 1-8)
-     * - Assembly stations (AS1-AS4)
-     * - Assembly station briefcases/inserts
-     * - Conveyor belt
-     * - Kit tray tables (KTS1 and KTS2)
-     *
-     * These collision objects enable path planning with collision avoidance.
-     *
-     * @return void
-     */
     void AddModelsToPlanningScene();
 
     // Floor Robot Public Functions
@@ -187,16 +140,69 @@ private:
     }
 
     // Thread safety mutexes
+    /**
+     * @brief Mutex for thread-safe access to conveyor parts data
+     *
+     * Protects conveyor_parts_ vector during concurrent read/write operations
+     * from multiple callbacks and processing threads.
+     */
     std::mutex conveyor_parts_mutex;
+    /**
+     * @brief Mutex for thread-safe access to left bins camera data
+     *
+     * Protects left_bins_parts_ vector during concurrent read/write operations
+     * from sensor callbacks and processing threads.
+     */
     std::mutex left_bins_mutex_;
+    /**
+     * @brief Mutex for thread-safe access to right bins camera data
+     *
+     * Protects right_bins_parts_ vector during concurrent read/write operations
+     * from sensor callbacks and processing threads.
+     */
     std::mutex right_bins_mutex_;
+    /**
+     * @brief Mutex for thread-safe access to KTS1 tray data
+     *
+     * Protects kts1_trays_ vector during concurrent read/write operations
+     * from sensor callbacks and processing threads.
+     */
     std::mutex kts1_trays_mutex_;
+    /**
+     * @brief Mutex for thread-safe access to KTS2 tray data
+     *
+     * Protects kts2_trays_ vector during concurrent read/write operations
+     * from sensor callbacks and processing threads.
+     */
     std::mutex kts2_trays_mutex_;
 
-    // Performance metrics and diagnostics
+    /**
+     * @brief Performance metrics for task durations
+     *
+     * Maps task names to execution durations for performance analysis
+     * and reporting.
+     */
     std::map<std::string, double> task_durations_;
+    /**
+     * @brief Counts of successful task completions
+     *
+     * Maps task names to success counts for performance tracking
+     * and reliability analysis.
+     */
     std::map<std::string, int> success_counts_;
+    /**
+     * @brief Counts of failed task attempts
+     *
+     * Maps task names to failure counts for identifying problem areas
+     * and reliability analysis.
+     */
     std::map<std::string, int> failure_counts_;
+    /**
+     * @brief Task start time for performance tracking
+     *
+     * Stores the start time of the current task for measuring
+     * execution duration.
+     */
     rclcpp::Time task_start_time_;
 
     // Configuration parameters
@@ -209,101 +215,403 @@ private:
         bool allow_replanning;
         int replan_attempts;
     };
-
+    /**
+     * @brief Configuration parameters for the floor robot
+     *
+     * Stores motion planning parameters including velocity scaling,
+     * acceleration scaling, planning time, and replanning settings.
+     */
     RobotConfig floor_robot_config_;
+    /**
+     * @brief Configuration parameters for the ceiling robot
+     *
+     * Stores motion planning parameters including velocity scaling,
+     * acceleration scaling, planning time, and replanning settings.
+     */
     RobotConfig ceiling_robot_config_;
 
-    // Diagnostic publisher
+    /**
+     * @brief Publisher for diagnostic information
+     *
+     * Publishes diagnostic messages about robot controller status
+     * and performance metrics.
+     */
     rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diagnostics_pub_;
 
-    // Service client maps for resource management
+    /**
+     * @brief Map of trigger service clients
+     *
+     * Caches service clients for various trigger services to avoid
+     * repeated creation of client objects.
+     */
     std::map<std::string, rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr> trigger_clients_;
+    /**
+     * @brief Map of move AGV service clients
+     *
+     * Caches service clients for AGV movement services to avoid
+     * repeated creation of client objects.
+     */
     std::map<std::string, rclcpp::Client<ariac_msgs::srv::MoveAGV>::SharedPtr> move_agv_clients_;
 
-    // AGV location
+    /**
+     * @brief Map of AGV locations
+     *
+     * Tracks the current location of each AGV in the competition area.
+     * Keys are AGV numbers (1-4), values are location codes.
+     */
     std::map<int, int> agv_locations_ = {{1, -1}, {2, -1}, {3, -1}, {4, -1}};
 
-    // Callback Groups
+    /**
+     * @brief Callback group for service clients
+     *
+     * Segregates service client callbacks for thread safety and execution control.
+     */
     rclcpp::CallbackGroup::SharedPtr client_cb_group_;
+    /**
+     * @brief Callback group for mutex-protected operations
+     *
+     * Ensures mutually exclusive execution of callbacks that access shared resources.
+     */
     rclcpp::CallbackGroup::SharedPtr mutex_cb_group_;
+    /**
+     * @brief Callback group for reentrant callbacks
+     *
+     * Allows callbacks to be executed concurrently with other callbacks
+     * in the same group for improved responsiveness.
+     */
     rclcpp::CallbackGroup::SharedPtr reentrant_cb_group_;
 
-    // MoveIt Interfaces
+    /**
+     * @brief MoveIt interface for the floor robot
+     *
+     * Provides motion planning and execution capabilities for the floor robot.
+     */
     moveit::planning_interface::MoveGroupInterface floor_robot_;
+    /**
+     * @brief MoveIt interface for the ceiling robot
+     *
+     * Provides motion planning and execution capabilities for the ceiling robot.
+     */
     moveit::planning_interface::MoveGroupInterface ceiling_robot_;
-
+    /**
+     * @brief MoveIt planning scene interface
+     *
+     * Provides access to the planning scene for collision object management.
+     */
     moveit::planning_interface::PlanningSceneInterface planning_scene_;
-
+    /**
+     * @brief Time-optimal trajectory generator
+     *
+     * Optimizes trajectory timing for smooth and efficient robot motion.
+     */
     trajectory_processing::TimeOptimalTrajectoryGeneration totg_;
 
-    // TF
+    /**
+     * @brief TF2 buffer for transform lookups
+     *
+     * Stores and manages coordinate transformations between different frames.
+     */
     std::unique_ptr<tf2_ros::Buffer> tf_buffer = std::make_unique<tf2_ros::Buffer>(get_clock());
+    /**
+     * @brief TF2 transform listener
+     *
+     * Listens for transformations published to the /tf topic and stores them in the buffer.
+     */
     std::shared_ptr<tf2_ros::TransformListener> tf_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
 
-    // Subscriptions
+    /**
+     * @brief Subscription for order messages
+     *
+     * Receives order information from the competition system.
+     */
     rclcpp::Subscription<ariac_msgs::msg::Order>::SharedPtr orders_sub_;
-    rclcpp::Subscription<ariac_msgs::msg::AGVStatus>::SharedPtr agv1_status_sub_;
-    rclcpp::Subscription<ariac_msgs::msg::AGVStatus>::SharedPtr agv2_status_sub_;
-    rclcpp::Subscription<ariac_msgs::msg::AGVStatus>::SharedPtr agv3_status_sub_;
-    rclcpp::Subscription<ariac_msgs::msg::AGVStatus>::SharedPtr agv4_status_sub_;
-    rclcpp::Subscription<ariac_msgs::msg::CompetitionState>::SharedPtr competition_state_sub_;
-    rclcpp::Subscription<ariac_msgs::msg::AdvancedLogicalCameraImage>::SharedPtr kts1_camera_sub_;
-    rclcpp::Subscription<ariac_msgs::msg::AdvancedLogicalCameraImage>::SharedPtr kts2_camera_sub_;
-    rclcpp::Subscription<ariac_msgs::msg::AdvancedLogicalCameraImage>::SharedPtr left_bins_camera_sub_;
-    rclcpp::Subscription<ariac_msgs::msg::AdvancedLogicalCameraImage>::SharedPtr right_bins_camera_sub_;
-    rclcpp::Subscription<ariac_msgs::msg::AdvancedLogicalCameraImage>::SharedPtr conveyor_camera_sub_;
-    rclcpp::Subscription<ariac_msgs::msg::BreakBeamStatus>::SharedPtr breakbeam_sub_;
-    rclcpp::Subscription<ariac_msgs::msg::ConveyorParts>::SharedPtr conveyor_parts_sub_;
 
+    /**
+     * @brief Subscription for AGV1 status messages
+     *
+     * Receives status updates for AGV1.
+     */
+    rclcpp::Subscription<ariac_msgs::msg::AGVStatus>::SharedPtr agv1_status_sub_;
+    /**
+     * @brief Subscription for AGV2 status messages
+     *
+     * Receives status updates for AGV2.
+     */
+    rclcpp::Subscription<ariac_msgs::msg::AGVStatus>::SharedPtr agv2_status_sub_;
+    /**
+     * @brief Subscription for AGV3 status messages
+     *
+     * Receives status updates for AGV3.
+     */
+    rclcpp::Subscription<ariac_msgs::msg::AGVStatus>::SharedPtr agv3_status_sub_;
+    /**
+     * @brief Subscription for AGV4 status messages
+     *
+     * Receives status updates for AGV4.
+     */
+    rclcpp::Subscription<ariac_msgs::msg::AGVStatus>::SharedPtr agv4_status_sub_;
+    /**
+     * @brief Subscription for competition state messages
+     *
+     * Receives updates about the current state of the competition.
+     */
+    rclcpp::Subscription<ariac_msgs::msg::CompetitionState>::SharedPtr competition_state_sub_;
+    /**
+     * @brief Subscription for KTS1 camera images
+     *
+     * Receives images from the camera above kitting tray station 1.
+     */
+    rclcpp::Subscription<ariac_msgs::msg::AdvancedLogicalCameraImage>::SharedPtr kts1_camera_sub_;
+    /**
+     * @brief Subscription for KTS2 camera images
+     *
+     * Receives images from the camera above kitting tray station 2.
+     */
+    rclcpp::Subscription<ariac_msgs::msg::AdvancedLogicalCameraImage>::SharedPtr kts2_camera_sub_;
+    /**
+     * @brief Subscription for left bins camera images
+     *
+     * Receives images from the camera above the left parts bins.
+     */
+    rclcpp::Subscription<ariac_msgs::msg::AdvancedLogicalCameraImage>::SharedPtr left_bins_camera_sub_;
+    /**
+     * @brief Subscription for right bins camera images
+     *
+     * Receives images from the camera above the right parts bins.
+     */
+    rclcpp::Subscription<ariac_msgs::msg::AdvancedLogicalCameraImage>::SharedPtr right_bins_camera_sub_;
+    /**
+     * @brief Subscription for conveyor camera images
+     *
+     * Receives images from the camera above the conveyor belt.
+     */
+    rclcpp::Subscription<ariac_msgs::msg::AdvancedLogicalCameraImage>::SharedPtr conveyor_camera_sub_;
+    /**
+     * @brief Subscription for breakbeam sensor status
+     *
+     * Receives breakbeam sensor events from the conveyor belt sensor.
+     */
+    rclcpp::Subscription<ariac_msgs::msg::BreakBeamStatus>::SharedPtr breakbeam_sub_;
+    /**
+     * @brief Subscription for conveyor parts notifications
+     *
+     * Receives information about parts expected on the conveyor belt.
+     */
+    rclcpp::Subscription<ariac_msgs::msg::ConveyorParts>::SharedPtr conveyor_parts_sub_;
+    /**
+     * @brief Subscription for floor robot gripper state
+     *
+     * Receives status updates about the floor robot gripper.
+     */
     rclcpp::Subscription<ariac_msgs::msg::VacuumGripperState>::SharedPtr floor_gripper_state_sub_;
+    /**
+     * @brief Subscription for ceiling robot gripper state
+     *
+     * Receives status updates about the ceiling robot gripper.
+     */
     rclcpp::Subscription<ariac_msgs::msg::VacuumGripperState>::SharedPtr ceiling_gripper_state_sub_;
 
+    /**
+     * @brief Subscription for assembly station 1 state
+     *
+     * Receives state updates from assembly station 1.
+     */
     rclcpp::Subscription<ariac_msgs::msg::AssemblyState>::SharedPtr as1_state_sub_;
+    /**
+     * @brief Subscription for assembly station 2 state
+     *
+     * Receives state updates from assembly station 2.
+     */
     rclcpp::Subscription<ariac_msgs::msg::AssemblyState>::SharedPtr as2_state_sub_;
+    /**
+     * @brief Subscription for assembly station 3 state
+     *
+     * Receives state updates from assembly station 3.
+     */
     rclcpp::Subscription<ariac_msgs::msg::AssemblyState>::SharedPtr as3_state_sub_;
+    /**
+     * @brief Subscription for assembly station 4 state
+     *
+     * Receives state updates from assembly station 4.
+     */
     rclcpp::Subscription<ariac_msgs::msg::AssemblyState>::SharedPtr as4_state_sub_;
-
-    // Assembly States
+    /**
+     * @brief Map of assembly station states
+     *
+     * Tracks the current state of each assembly station.
+     * Keys are station numbers (1-4), values are assembly states.
+     */
     std::map<int, ariac_msgs::msg::AssemblyState> assembly_station_states_;
-
-    // Orders List
+    /**
+     * @brief Currently active order
+     *
+     * Stores the order currently being processed.
+     */
     ariac_msgs::msg::Order current_order_;
-    std::vector<ariac_msgs::msg::Order> orders_;
 
+    /**
+     * @brief Queue of pending orders
+     *
+     * Stores orders that have been received but not yet processed.
+     */
+    std::vector<ariac_msgs::msg::Order> orders_;
+    /**
+     * @brief Current competition state
+     *
+     * Stores the current state of the competition (IDLE, READY, STARTED, etc.).
+     */
     unsigned int competition_state_;
 
-    // Gripper State
+    /**
+     * @brief Floor robot gripper state
+     *
+     * Tracks the current state of the floor robot's gripper.
+     */
     ariac_msgs::msg::VacuumGripperState floor_gripper_state_;
+    /**
+     * @brief Part currently attached to floor robot
+     *
+     * Stores information about the part currently held by the floor robot.
+     */
     ariac_msgs::msg::Part floor_robot_attached_part_;
+    /**
+     * @brief Ceiling robot gripper state
+     *
+     * Tracks the current state of the ceiling robot's gripper.
+     */
     ariac_msgs::msg::VacuumGripperState ceiling_gripper_state_;
+    /**
+     * @brief Part currently attached to ceiling robot
+     *
+     * Stores information about the part currently held by the ceiling robot.
+     */
     ariac_msgs::msg::Part ceiling_robot_attached_part_;
 
-    // Sensor poses
+    /**
+     * @brief Pose of the KTS1 camera in world frame
+     *
+     * Stores the position and orientation of the camera at kitting tray station 1.
+     */
     geometry_msgs::msg::Pose kts1_camera_pose_;
+    /**
+     * @brief Pose of the KTS2 camera in world frame
+     *
+     * Stores the position and orientation of the camera at kitting tray station 2.
+     */
     geometry_msgs::msg::Pose kts2_camera_pose_;
+
+    /**
+     * @brief Pose of the left bins camera in world frame
+     *
+     * Stores the position and orientation of the camera above the left parts bins.
+     */
     geometry_msgs::msg::Pose left_bins_camera_pose_;
+    /**
+     * @brief Pose of the right bins camera in world frame
+     *
+     * Stores the position and orientation of the camera above the right parts bins.
+     */
     geometry_msgs::msg::Pose right_bins_camera_pose_;
+    /**
+     * @brief Pose of the conveyor camera in world frame
+     *
+     * Stores the position and orientation of the camera above the conveyor belt.
+     */
     geometry_msgs::msg::Pose conveyor_camera_pose_;
+
+    /**
+     * @brief Pose of the breakbeam sensor in world frame
+     *
+     * Stores the position and orientation of the breakbeam sensor on the conveyor.
+     */
     geometry_msgs::msg::Pose breakbeam_pose_;
 
-    // Trays
+    /**
+     * @brief Vector of tray poses at KTS1
+     *
+     * Stores information about trays detected at kitting tray station 1.
+     */
     std::vector<ariac_msgs::msg::KitTrayPose> kts1_trays_;
+    /**
+     * @brief Vector of tray poses at KTS2
+     *
+     * Stores information about trays detected at kitting tray station 2.
+     */
     std::vector<ariac_msgs::msg::KitTrayPose> kts2_trays_;
-
-    // Bins
+    /**
+     * @brief Vector of part poses in left bins
+     *
+     * Stores information about parts detected in the left bins.
+     */
     std::vector<ariac_msgs::msg::PartPose> left_bins_parts_;
+    /**
+     * @brief Vector of part poses in right bins
+     *
+     * Stores information about parts detected in the right bins.
+     */
     std::vector<ariac_msgs::msg::PartPose> right_bins_parts_;
+    /**
+     * @brief Vector of parts detected on the conveyor with timestamps
+     *
+     * Stores information about parts detected on the conveyor belt and
+     * the time they were detected, for tracking and interception.
+     */
     std::vector<std::pair<ariac_msgs::msg::PartPose, rclcpp::Time>> conveyor_parts_;
+    /**
+     * @brief Vector of part poses detected by the conveyor camera
+     *
+     * Stores information about parts currently visible to the conveyor camera.
+     */
     std::vector<ariac_msgs::msg::PartPose> conveyor_part_detected_;
+    /**
+     * @brief Vector of parts expected on the conveyor
+     *
+     * Stores information about parts that will be coming down the conveyor
+     * based on competition announcements.
+     */
     std::vector<ariac_msgs::msg::PartLot> conveyor_parts_expected_;
 
-    // Sensor Callbacks
+    /**
+     * @brief Flag indicating if data has been received from KTS1 camera
+     *
+     * Used to track when the first data from this sensor is received.
+     */
     bool kts1_camera_recieved_data = false;
+    /**
+     * @brief Flag indicating if data has been received from KTS2 camera
+     *
+     * Used to track when the first data from this sensor is received.
+     */
     bool kts2_camera_recieved_data = false;
+    /**
+     * @brief Flag indicating if data has been received from left bins camera
+     *
+     * Used to track when the first data from this sensor is received.
+     */
     bool left_bins_camera_recieved_data = false;
+    /**
+     * @brief Flag indicating if data has been received from right bins camera
+     *
+     * Used to track when the first data from this sensor is received.
+     */
     bool right_bins_camera_recieved_data = false;
+    /**
+     * @brief Flag indicating if data has been received from conveyor camera
+     *
+     * Used to track when the first data from this sensor is received.
+     */
     bool conveyor_camera_recieved_data = false;
+    /**
+     * @brief Flag indicating if data has been received from breakbeam sensor
+     *
+     * Used to track when the first data from this sensor is received.
+     */
     bool breakbeam_received_data = false;
+    /**
+     * @brief Flag indicating if data has been received about conveyor parts
+     *
+     * Used to track when the first data about expected conveyor parts is received.
+     */
     bool conveyor_parts_recieved_data = false;
 
     void kts1_camera_cb(const ariac_msgs::msg::AdvancedLogicalCameraImage::ConstSharedPtr msg);
@@ -335,31 +643,103 @@ private:
     // Competition state callback
     void TopicCompetitionStateCallback(const ariac_msgs::msg::CompetitionState::ConstSharedPtr msg);
 
-    // ARIAC Services
+    /**
+     * @brief Service client for quality checking
+     *
+     * Used to request quality checks for completed kits.
+     */
     rclcpp::Client<ariac_msgs::srv::PerformQualityCheck>::SharedPtr quality_checker_;
+    /**
+     * @brief Service client for getting pre-assembly poses
+     *
+     * Used to request pose information for parts before assembly.
+     */
     rclcpp::Client<ariac_msgs::srv::GetPreAssemblyPoses>::SharedPtr pre_assembly_poses_getter_;
+    /**
+     * @brief Service client for changing floor robot tools
+     *
+     * Used to change between different gripper types on the floor robot.
+     */
     rclcpp::Client<ariac_msgs::srv::ChangeGripper>::SharedPtr floor_robot_tool_changer_;
+    /**
+     * @brief Service client for controlling the floor robot gripper
+     *
+     * Used to enable or disable the vacuum gripper on the floor robot.
+     */
     rclcpp::Client<ariac_msgs::srv::VacuumGripperControl>::SharedPtr floor_robot_gripper_enable_;
+    /**
+     * @brief Service client for controlling the ceiling robot gripper
+     *
+     * Used to enable or disable the vacuum gripper on the ceiling robot.
+     */
     rclcpp::Client<ariac_msgs::srv::VacuumGripperControl>::SharedPtr ceiling_robot_gripper_enable_;
 
-    // Breakbeam parameters
+    /**
+     * @brief Current state of the breakbeam sensor
+     *
+     * Indicates whether the breakbeam is currently detecting an object.
+     */
     bool breakbeam_status = false;
+    /**
+     * @brief Timestamp of the last breakbeam event
+     *
+     * Stores the time when the breakbeam was last triggered, used for
+     * timing calculations in conveyor tracking.
+     */
     float breakbeam_time_sec;
 
-    // Constants
+    /**
+     * @brief Speed of the conveyor belt in m/s
+     *
+     * Used for calculating part positions and planning interception timing.
+     */
     double conveyor_speed_ = 0.2;
+    /**
+     * @brief Thickness of the kit tray in meters
+     *
+     * Used for calculating precise placement positions on trays.
+     */
     double kit_tray_thickness_ = 0.01;
-    double drop_height_ = 0.005;
-    double pick_offset_ = 0.003;
-    double assembly_offset_ = 0.02;
-    double battery_grip_offset_ = -0.05;
 
+    /**
+     * @brief Height offset for part dropping in meters
+     *
+     * Small offset to prevent collision when placing parts.
+     */
+    double drop_height_ = 0.005;
+    /**
+     * @brief Height offset for part picking in meters
+     *
+     * Small offset to ensure proper vacuum gripper contact during pickup.
+     */
+    double pick_offset_ = 0.003;
+    /**
+     * @brief Height offset for assembly operations in meters
+     *
+     * Distance offset used during assembly operations.
+     */
+    double assembly_offset_ = 0.02;
+    /**
+     * @brief Grip offset for battery parts in meters
+     *
+     * Special offset needed for properly grasping battery parts.
+     */
+    double battery_grip_offset_ = -0.05;
+    /**
+     * @brief Map of part type codes to human-readable names
+     *
+     * Used for logging and diagnostics to translate numeric type codes.
+     */
     std::map<int, std::string> part_types_ = {
         {ariac_msgs::msg::Part::BATTERY, "battery"},
         {ariac_msgs::msg::Part::PUMP, "pump"},
         {ariac_msgs::msg::Part::REGULATOR, "regulator"},
         {ariac_msgs::msg::Part::SENSOR, "sensor"}};
-
+    /**
+     * @brief Map of part color codes to human-readable names
+     *
+     * Used for logging and diagnostics to translate numeric color codes.
+     */
     std::map<int, std::string> part_colors_ = {
         {ariac_msgs::msg::Part::RED, "red"},
         {ariac_msgs::msg::Part::BLUE, "blue"},
@@ -367,22 +747,32 @@ private:
         {ariac_msgs::msg::Part::ORANGE, "orange"},
         {ariac_msgs::msg::Part::PURPLE, "purple"},
     };
-
-    // Part heights
+    /**
+     * @brief Map of part types to their heights in meters
+     *
+     * Used for calculating precise pick and place positions.
+     */
     std::map<int, double> part_heights_ = {
         {ariac_msgs::msg::Part::BATTERY, 0.04},
         {ariac_msgs::msg::Part::PUMP, 0.12},
         {ariac_msgs::msg::Part::REGULATOR, 0.07},
         {ariac_msgs::msg::Part::SENSOR, 0.07}};
-
-    // Quadrant Offsets
+    /**
+     * @brief Map of quadrant numbers to position offsets
+     *
+     * Defines the x,y offsets for each quadrant on the kit tray.
+     */
     std::map<int, std::pair<double, double>> quad_offsets_ = {
         {ariac_msgs::msg::KittingPart::QUADRANT1, std::pair<double, double>(-0.08, 0.12)},
         {ariac_msgs::msg::KittingPart::QUADRANT2, std::pair<double, double>(0.08, 0.12)},
         {ariac_msgs::msg::KittingPart::QUADRANT3, std::pair<double, double>(-0.08, -0.12)},
         {ariac_msgs::msg::KittingPart::QUADRANT4, std::pair<double, double>(0.08, -0.12)},
     };
-
+    /**
+     * @brief Map of named positions to rail positions in meters
+     *
+     * Defines the linear actuator joint positions for reaching key locations.
+     */
     std::map<std::string, double> rail_positions_ = {
         {"agv1", -4.5},
         {"agv2", -1.2},
@@ -391,7 +781,11 @@ private:
         {"left_bins", 3},
         {"right_bins", -3}};
 
-    // Joint value targets for kitting stations
+    /**
+     * @brief Joint values for floor robot at KTS1
+     *
+     * Predefined joint positions for the floor robot at kitting tray station 1.
+     */
     std::map<std::string, double> floor_kts1_js_ = {
         {"linear_actuator_joint", 4.0},
         {"floor_shoulder_pan_joint", 1.57},
@@ -400,7 +794,11 @@ private:
         {"floor_wrist_1_joint", -1.57},
         {"floor_wrist_2_joint", -1.57},
         {"floor_wrist_3_joint", 0.0}};
-
+    /**
+     * @brief Joint values for floor robot at KTS2
+     *
+     * Predefined joint positions for the floor robot at kitting tray station 2.
+     */
     std::map<std::string, double> floor_kts2_js_ = {
         {"linear_actuator_joint", -4.0},
         {"floor_shoulder_pan_joint", -1.57},
@@ -409,7 +807,11 @@ private:
         {"floor_wrist_1_joint", -1.57},
         {"floor_wrist_2_joint", -1.57},
         {"floor_wrist_3_joint", 0.0}};
-
+    /**
+     * @brief Joint values for ceiling robot at assembly station 1
+     *
+     * Predefined joint positions for the ceiling robot at assembly station 1.
+     */
     std::map<std::string, double> ceiling_as1_js_ = {
         {"gantry_x_axis_joint", 1},
         {"gantry_y_axis_joint", -3},
@@ -421,6 +823,11 @@ private:
         {"ceiling_wrist_2_joint", -1.57},
         {"ceiling_wrist_3_joint", 0}};
 
+    /**
+     * @brief Joint values for ceiling robot at assembly station 2
+     *
+     * Predefined joint positions for the ceiling robot at assembly station 2.
+     */
     std::map<std::string, double> ceiling_as2_js_ = {
         {"gantry_x_axis_joint", -4},
         {"gantry_y_axis_joint", -3},
@@ -431,7 +838,11 @@ private:
         {"ceiling_wrist_1_joint", 3.14},
         {"ceiling_wrist_2_joint", -1.57},
         {"ceiling_wrist_3_joint", 0}};
-
+    /**
+     * @brief Joint values for ceiling robot at assembly station 3
+     *
+     * Predefined joint positions for the ceiling robot at assembly station 3.
+     */
     std::map<std::string, double> ceiling_as3_js_ = {
         {"gantry_x_axis_joint", 1},
         {"gantry_y_axis_joint", 3},
@@ -442,7 +853,11 @@ private:
         {"ceiling_wrist_1_joint", 3.14},
         {"ceiling_wrist_2_joint", -1.57},
         {"ceiling_wrist_3_joint", 0}};
-
+    /**
+     * @brief Joint values for ceiling robot at assembly station 4
+     *
+     * Predefined joint positions for the ceiling robot at assembly station 4.
+     */
     std::map<std::string, double> ceiling_as4_js_ = {
         {"gantry_x_axis_joint", -4},
         {"gantry_y_axis_joint", 3},
@@ -453,7 +868,11 @@ private:
         {"ceiling_wrist_1_joint", 3.14},
         {"ceiling_wrist_2_joint", -1.57},
         {"ceiling_wrist_3_joint", 0}};
-
+    /**
+     * @brief Joint values for floor robot at conveyor
+     *
+     * Predefined joint positions for the floor robot at the conveyor belt.
+     */
     std::map<std::string, double> floor_conveyor_js_ = {
         {"linear_actuator_joint", 0.0},
         {"floor_shoulder_pan_joint", 3.14},
@@ -462,13 +881,21 @@ private:
         {"floor_wrist_1_joint", -2.67035},
         {"floor_wrist_2_joint", -1.57},
         {"floor_wrist_3_joint", 0.0}};
-
+    /**
+     * @brief Map of AGV destination codes to human-readable names
+     *
+     * Used for logging and diagnostics to translate destination codes.
+     */
     std::map<int, std::string> agv_destination_ = {
         {ariac_msgs::msg::AGVStatus::KITTING, "kitting"},
         {ariac_msgs::msg::AGVStatus::ASSEMBLY_FRONT, "assembly station front"},
         {ariac_msgs::msg::AGVStatus::ASSEMBLY_BACK, "assembly station back"},
         {ariac_msgs::msg::AGVStatus::WAREHOUSE, "warehouse"}};
-
+    /**
+     * @brief List of planning scene objects added for the current order
+     *
+     * Tracks collision objects that should be cleaned up when an order completes.
+     */
     std::vector<std::string> order_planning_scene_objects_;
 
     // Basic color definitions

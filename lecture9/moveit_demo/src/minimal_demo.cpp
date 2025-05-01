@@ -1,6 +1,26 @@
+/**
+ * @file minimal_demo.cpp
+ * @brief Implementation of the RobotController class for the ARIAC competition
+ *
+ * This file contains the implementation of a controller for managing robots
+ * in the ARIAC (Agile Robotics for Industrial Automation Competition) environment.
+ * It handles robot movement, planning, picking, and placing operations for both
+ * floor and ceiling robots.
+ *
+ * @author zeid kootbally
+ * @date May 2025
+ */
+
 #include <moveit_demo/minimal_demo.hpp>
 #include <random>
 
+/**
+ * @brief Constructor for the RobotController class
+ *
+ * Initializes the robot controller with default parameters, sets up callbacks,
+ * subscriptions, and service clients. Configures the MoveIt interfaces for
+ * both floor and ceiling robots with optimized motion planning parameters.
+ */
 RobotController::RobotController()
     : Node("moveit_demo"),
       floor_robot_(std::shared_ptr<rclcpp::Node>(std::move(this)), "floor_robot"),
@@ -111,11 +131,24 @@ RobotController::RobotController()
     RCLCPP_INFO_STREAM(this->get_logger(), BOLD + ORANGE << "Initialization successful. " << RESET);
 }
 
+/**
+ * @brief Destructor for the RobotController class
+ *
+ * Cleans up resources by properly destroying the MoveIt interfaces
+ * for both floor and ceiling robots.
+ */
 RobotController::~RobotController()
 {
     floor_robot_.~MoveGroupInterface();
     ceiling_robot_.~MoveGroupInterface();
 }
+
+/**
+ * @brief Periodic callback to monitor and start the competition
+ *
+ * Checks if the competition is in READY state and not yet started,
+ * then attempts to start it using the StartCompetition service.
+ */
 void RobotController::CompetitionTimerCallback()
 {
 
@@ -127,11 +160,19 @@ void RobotController::CompetitionTimerCallback()
         {
             RCLCPP_INFO(get_logger(), "Competition started successfully");
             competition_started_ = true;
-
         }
     }
 }
 
+/**
+ * @brief Callback for parameter events to handle operation mode changes
+ *
+ * Monitors parameter events for changes to the operation_mode parameter.
+ * When detected, updates the current operation mode and starts the operation
+ * if the competition is already running.
+ *
+ * @param event The parameter event containing information about changed parameters
+ */
 void RobotController::OnParameterEvent(const rcl_interfaces::msg::ParameterEvent::SharedPtr event)
 {
     // Check if this is our node's parameter
@@ -160,12 +201,20 @@ void RobotController::OnParameterEvent(const rcl_interfaces::msg::ParameterEvent
     }
 }
 
+/**
+ * @brief Starts the selected operation based on the current mode
+ *
+ * Initializes the planning scene and dispatches to the appropriate
+ * operation handler based on the current_operation_mode value.
+ * Supported modes include "pick_place_tray" and "pick_place_part".
+ *
+ * @return true if operation started successfully, false otherwise
+ */
 bool RobotController::StartOperation()
 {
     RCLCPP_INFO_STREAM(this->get_logger(), BOLD + ORANGE << "Starting operation: " << current_operation_mode_ << RESET);
 
     AddModelsToPlanningScene();
-
 
     if (current_operation_mode_ == "pick_place_tray")
     {
@@ -186,12 +235,27 @@ bool RobotController::StartOperation()
     EndCompetition();
 }
 
+/**
+ * @brief Callback for processing incoming orders
+ *
+ * Adds new orders to the order queue for processing.
+ *
+ * @param msg The order message containing order details
+ */
 void RobotController::TopicOrdersCallback(
     const ariac_msgs::msg::Order::ConstSharedPtr msg)
 {
     orders_.push_back(*msg);
 }
 
+/**
+ * @brief Executes the pick and place tray operation
+ *
+ * Waits for orders, ensures an AGV is at the kitting station,
+ * picks up a specified tray, and places it on the AGV.
+ *
+ * @return true if the operation completed successfully, false otherwise
+ */
 bool RobotController::ExecutePickPlaceTrayOperation()
 {
     // Wait for first order to be published
@@ -253,6 +317,15 @@ bool RobotController::ExecutePickPlaceTrayOperation()
     return success;
 }
 
+/**
+ * @brief Executes the pick and place part operation
+ *
+ * Waits for orders, ensures an AGV is at the kitting station,
+ * randomly selects a part from the bins, picks it up, and
+ * places it on a random quadrant of the AGV's tray.
+ *
+ * @return true if the operation completed successfully, false otherwise
+ */
 bool RobotController::ExecutePickPlacePartOperation()
 {
     // Wait for first order to be published
@@ -374,6 +447,14 @@ bool RobotController::ExecutePickPlacePartOperation()
     return success;
 }
 
+/**
+ * @brief Callback for competition state changes
+ *
+ * Monitors the competition state and triggers the start of operations
+ * when the competition transitions to STARTED or ORDER_ANNOUNCEMENTS_DONE.
+ *
+ * @param msg The competition state message
+ */
 void RobotController::TopicCompetitionStateCallback(
     const ariac_msgs::msg::CompetitionState::ConstSharedPtr msg)
 {
@@ -392,6 +473,14 @@ void RobotController::TopicCompetitionStateCallback(
     }
 }
 
+/**
+ * @brief Callback for KTS1 (kitting tray station 1) camera images
+ *
+ * Processes camera data from KTS1, storing tray poses and camera pose
+ * for later use in pick and place operations.
+ *
+ * @param msg The camera image message containing tray information
+ */
 void RobotController::kts1_camera_cb(
     const ariac_msgs::msg::AdvancedLogicalCameraImage::ConstSharedPtr msg)
 {
@@ -405,6 +494,14 @@ void RobotController::kts1_camera_cb(
     kts1_camera_pose_ = msg->sensor_pose;
 }
 
+/**
+ * @brief Callback for KTS2 (kitting tray station 2) camera images
+ *
+ * Processes camera data from KTS2, storing tray poses and camera pose
+ * for later use in pick and place operations.
+ *
+ * @param msg The camera image message containing tray information
+ */
 void RobotController::kts2_camera_cb(
     const ariac_msgs::msg::AdvancedLogicalCameraImage::ConstSharedPtr msg)
 {
@@ -418,6 +515,14 @@ void RobotController::kts2_camera_cb(
     kts2_camera_pose_ = msg->sensor_pose;
 }
 
+/**
+ * @brief Callback for left bins camera images
+ *
+ * Processes camera data from the left bins, storing part poses and camera pose
+ * for later use in pick operations.
+ *
+ * @param msg The camera image message containing part information
+ */
 void RobotController::left_bins_camera_cb(
     const ariac_msgs::msg::AdvancedLogicalCameraImage::ConstSharedPtr msg)
 {
@@ -431,6 +536,14 @@ void RobotController::left_bins_camera_cb(
     left_bins_camera_pose_ = msg->sensor_pose;
 }
 
+/**
+ * @brief Callback for right bins camera images
+ *
+ * Processes camera data from the right bins, storing part poses and camera pose
+ * for later use in pick operations.
+ *
+ * @param msg The camera image message containing part information
+ */
 void RobotController::right_bins_camera_cb(
     const ariac_msgs::msg::AdvancedLogicalCameraImage::ConstSharedPtr msg)
 {
@@ -444,6 +557,13 @@ void RobotController::right_bins_camera_cb(
     right_bins_camera_pose_ = msg->sensor_pose;
 }
 
+/**
+ * @brief Callback for conveyor parts notifications
+ *
+ * Processes notifications about parts expected on the conveyor belt.
+ *
+ * @param msg The conveyor parts message with information about expected parts
+ */
 void RobotController::conveyor_parts_cb(
     const ariac_msgs::msg::ConveyorParts::ConstSharedPtr msg)
 {
@@ -456,6 +576,14 @@ void RobotController::conveyor_parts_cb(
     conveyor_parts_expected_ = msg->parts;
 }
 
+/**
+ * @brief Callback for conveyor camera images
+ *
+ * Processes camera data from the conveyor, detecting parts moving on the
+ * conveyor belt for potential pickup.
+ *
+ * @param msg The camera image message containing part information
+ */
 void RobotController::conveyor_camera_cb(
     const ariac_msgs::msg::AdvancedLogicalCameraImage::ConstSharedPtr msg)
 {
@@ -469,6 +597,14 @@ void RobotController::conveyor_camera_cb(
     conveyor_camera_pose_ = msg->sensor_pose;
 }
 
+/**
+ * @brief Callback for breakbeam sensor status
+ *
+ * Processes breakbeam sensor events, detecting when parts pass through
+ * the beam and tracking their positions for interception.
+ *
+ * @param msg The breakbeam status message
+ */
 void RobotController::breakbeam_cb(
     const ariac_msgs::msg::BreakBeamStatus::ConstSharedPtr msg)
 {
@@ -515,42 +651,97 @@ void RobotController::breakbeam_cb(
     }
 }
 
+/**
+ * @brief Callback for floor robot gripper state updates
+ *
+ * Monitors the state of the floor robot's gripper to track
+ * when parts are picked up or released.
+ *
+ * @param msg The vacuum gripper state message
+ */
 void RobotController::floor_gripper_state_cb(
     const ariac_msgs::msg::VacuumGripperState::ConstSharedPtr msg)
 {
     floor_gripper_state_ = *msg;
 }
 
+/**
+ * @brief Callback for ceiling robot gripper state updates
+ *
+ * Monitors the state of the ceiling robot's gripper to track
+ * when parts are picked up or released.
+ *
+ * @param msg The vacuum gripper state message
+ */
 void RobotController::ceiling_gripper_state_cb(
     const ariac_msgs::msg::VacuumGripperState::ConstSharedPtr msg)
 {
     ceiling_gripper_state_ = *msg;
 }
 
+/**
+ * @brief Callback for AGV1 status updates
+ *
+ * Tracks the current location of AGV1 in the competition area.
+ *
+ * @param msg The AGV status message
+ */
 void RobotController::agv1_status_cb(
     const ariac_msgs::msg::AGVStatus::ConstSharedPtr msg)
 {
     agv_locations_[1] = msg->location;
 }
 
+/**
+ * @brief Callback for AGV2 status updates
+ *
+ * Tracks the current location of AGV2 in the competition area.
+ *
+ * @param msg The AGV status message
+ */
 void RobotController::agv2_status_cb(
     const ariac_msgs::msg::AGVStatus::ConstSharedPtr msg)
 {
     agv_locations_[2] = msg->location;
 }
 
+/**
+ * @brief Callback for AGV3 status updates
+ *
+ * Tracks the current location of AGV3 in the competition area.
+ *
+ * @param msg The AGV status message
+ */
 void RobotController::agv3_status_cb(
     const ariac_msgs::msg::AGVStatus::ConstSharedPtr msg)
 {
     agv_locations_[3] = msg->location;
 }
 
+/**
+ * @brief Callback for AGV4 status updates
+ *
+ * Tracks the current location of AGV4 in the competition area.
+ *
+ * @param msg The AGV status message
+ */
 void RobotController::agv4_status_cb(
     const ariac_msgs::msg::AGVStatus::ConstSharedPtr msg)
 {
     agv_locations_[4] = msg->location;
 }
 
+/**
+ * @brief Multiplies two poses to get a combined transformation
+ *
+ * Uses KDL to multiply two poses (position and orientation) to
+ * create a new pose that represents the combined transformation.
+ * Typically used to transform poses from camera frame to world frame.
+ *
+ * @param p1 The first pose (typically representing a frame transformation)
+ * @param p2 The second pose (typically in the first pose's frame)
+ * @return The combined transformation pose
+ */
 geometry_msgs::msg::Pose RobotController::MultiplyPose(
     geometry_msgs::msg::Pose p1, geometry_msgs::msg::Pose p2)
 {
@@ -565,6 +756,14 @@ geometry_msgs::msg::Pose RobotController::MultiplyPose(
     return tf2::toMsg(f3);
 }
 
+/**
+ * @brief Logs the details of a pose for debugging
+ *
+ * Converts the quaternion to RPY angles and prints the position
+ * and orientation for debugging purposes.
+ *
+ * @param p The pose to log
+ */
 void RobotController::LogPose(geometry_msgs::msg::Pose p)
 {
     tf2::Quaternion q(
@@ -585,6 +784,18 @@ void RobotController::LogPose(geometry_msgs::msg::Pose p)
                 roll, pitch, yaw);
 }
 
+/**
+ * @brief Builds a Pose message from position coordinates and orientation
+ *
+ * Convenience function to create a complete Pose message from
+ * individual position components and an orientation quaternion.
+ *
+ * @param x X-coordinate
+ * @param y Y-coordinate
+ * @param z Z-coordinate
+ * @param orientation Quaternion orientation
+ * @return The constructed Pose message
+ */
 geometry_msgs::msg::Pose RobotController::BuildPose(
     double x, double y, double z, geometry_msgs::msg::Quaternion orientation)
 {
@@ -597,6 +808,15 @@ geometry_msgs::msg::Pose RobotController::BuildPose(
     return pose;
 }
 
+/**
+ * @brief Gets the world pose of a named frame
+ *
+ * Uses TF2 to look up the transformation between the world frame
+ * and the specified frame, converting it to a Pose message.
+ *
+ * @param frame_id The frame ID to get the pose for
+ * @return The pose of the frame in world coordinates
+ */
 geometry_msgs::msg::Pose RobotController::FrameWorldPose(std::string frame_id)
 {
     geometry_msgs::msg::TransformStamped t;
@@ -619,6 +839,15 @@ geometry_msgs::msg::Pose RobotController::FrameWorldPose(std::string frame_id)
     return pose;
 }
 
+/**
+ * @brief Extracts the yaw angle from a pose
+ *
+ * Converts the orientation quaternion to Euler angles and returns
+ * the yaw component, which represents rotation around the Z axis.
+ *
+ * @param pose The pose to extract the yaw from
+ * @return The yaw angle in radians
+ */
 double RobotController::GetYaw(geometry_msgs::msg::Pose pose)
 {
     tf2::Quaternion q(
@@ -633,6 +862,17 @@ double RobotController::GetYaw(geometry_msgs::msg::Pose pose)
     return yaw;
 }
 
+/**
+ * @brief Creates a quaternion from roll, pitch, and yaw angles
+ *
+ * Convenience function to convert Euler angles to a quaternion
+ * for use in pose specifications.
+ *
+ * @param r Roll angle in radians
+ * @param p Pitch angle in radians
+ * @param y Yaw angle in radians
+ * @return The equivalent quaternion
+ */
 geometry_msgs::msg::Quaternion RobotController::QuaternionFromRPY(double r, double p, double y)
 {
     tf2::Quaternion q;
@@ -648,6 +888,17 @@ geometry_msgs::msg::Quaternion RobotController::QuaternionFromRPY(double r, doub
     return q_msg;
 }
 
+/**
+ * @brief Creates a collision object from a mesh file
+ *
+ * Loads a mesh from a file and creates a collision object
+ * for use in the planning scene.
+ *
+ * @param name Unique identifier for the collision object
+ * @param mesh_file Path to the mesh file
+ * @param model_pose Pose for the collision object
+ * @return The created collision object
+ */
 moveit_msgs::msg::CollisionObject RobotController::CreateCollisionObject(
     std::string name, std::string mesh_file, geometry_msgs::msg::Pose model_pose)
 {
@@ -677,6 +928,16 @@ moveit_msgs::msg::CollisionObject RobotController::CreateCollisionObject(
     return collision;
 }
 
+/**
+ * @brief Adds a model to the planning scene
+ *
+ * Creates a collision object from a mesh file and adds it to the
+ * planning scene for collision avoidance during motion planning.
+ *
+ * @param name Unique identifier for the collision object
+ * @param mesh_file Filename of the mesh in the meshes directory
+ * @param model_pose Pose for the collision object
+ */
 void RobotController::AddModelToPlanningScene(
     std::string name, std::string mesh_file, geometry_msgs::msg::Pose model_pose)
 {
@@ -685,7 +946,7 @@ void RobotController::AddModelToPlanningScene(
 }
 
 /**
- * @brief Adds all required collision models to the MoveIt planning scene
+ * @brief Adds all required collision models to the planning scene
  *
  * Initializes the planning scene with collision objects representing:
  * - Storage bins (bins 1-8)
@@ -695,11 +956,6 @@ void RobotController::AddModelToPlanningScene(
  * - Kit tray tables (KTS1 and KTS2)
  *
  * This comprehensive scene enables collision-aware path planning for both robots.
- *
- * @return void
- *
- * @note If any object cannot be added, the function will log a warning but continue
- *       with the remaining objects
  */
 void RobotController::AddModelsToPlanningScene()
 {
@@ -795,6 +1051,15 @@ void RobotController::AddModelsToPlanningScene()
     RCLCPP_INFO(get_logger(), "Planning scene initialization complete");
 }
 
+/**
+ * @brief Creates a robot orientation quaternion with specified rotation
+ *
+ * Creates a quaternion for gripper orientation with a fixed roll and pitch
+ * (3.14159 radians around Y axis) and a variable yaw specified by the parameter.
+ *
+ * @param rotation Yaw angle in radians
+ * @return The calculated orientation quaternion
+ */
 geometry_msgs::msg::Quaternion RobotController::SetRobotOrientation(double rotation)
 {
     tf2::Quaternion tf_q;
@@ -810,6 +1075,14 @@ geometry_msgs::msg::Quaternion RobotController::SetRobotOrientation(double rotat
     return q;
 }
 
+/**
+ * @brief Plans and executes a motion to the current target for the floor robot
+ *
+ * Plans a path to the currently set target pose or joint state,
+ * with retry logic and adaptive planning parameters for reliability.
+ *
+ * @return true if motion executed successfully, false otherwise
+ */
 bool RobotController::FloorRobotMovetoTarget()
 {
     int max_attempts = 3;
@@ -866,6 +1139,18 @@ bool RobotController::FloorRobotMovetoTarget()
     return false;
 }
 
+/**
+ * @brief Plans and executes a Cartesian path for the floor robot
+ *
+ * Computes and executes a Cartesian path through the specified waypoints,
+ * with advanced error recovery and segment-by-segment planning for reliability.
+ *
+ * @param waypoints List of pose waypoints defining the path
+ * @param vsf Velocity scaling factor (0.0-1.0)
+ * @param asf Acceleration scaling factor (0.0-1.0)
+ * @param avoid_collisions Whether to check for collisions during planning
+ * @return true if path executed successfully, false otherwise
+ */
 bool RobotController::FloorRobotMoveCartesian(
     std::vector<geometry_msgs::msg::Pose> waypoints, double vsf, double asf, bool avoid_collisions)
 {
@@ -973,6 +1258,18 @@ bool RobotController::FloorRobotMoveCartesian(
     return false;
 }
 
+/**
+ * @brief Plans a Cartesian path for the floor robot
+ *
+ * Computes a Cartesian path through the specified waypoints without executing it.
+ * Returns both success status and the computed trajectory.
+ *
+ * @param waypoints List of pose waypoints defining the path
+ * @param vsf Velocity scaling factor (0.0-1.0)
+ * @param asf Acceleration scaling factor (0.0-1.0)
+ * @param avoid_collisions Whether to check for collisions during planning
+ * @return Pair of (success flag, trajectory)
+ */
 std::pair<bool, moveit_msgs::msg::RobotTrajectory> RobotController::FloorRobotPlanCartesian(
     std::vector<geometry_msgs::msg::Pose> waypoints, double vsf, double asf, bool avoid_collisions)
 {
@@ -995,6 +1292,14 @@ std::pair<bool, moveit_msgs::msg::RobotTrajectory> RobotController::FloorRobotPl
     return std::make_pair(true, trajectory);
 }
 
+/**
+ * @brief Waits for a part to be attached to the floor robot gripper
+ *
+ * Performs small downward movements until a part is attached to the gripper
+ * or the timeout is reached.
+ *
+ * @param timeout Maximum time in seconds to wait for attachment
+ */
 void RobotController::FloorRobotWaitForAttach(double timeout)
 {
     // Wait for part to be attached
@@ -1022,56 +1327,12 @@ void RobotController::FloorRobotWaitForAttach(double timeout)
     }
 }
 
-// void RobotController::FloorRobotWaitForAttach(double timeout)
-// {
-//     // Wait for part to be attached with more efficient strategy
-//     rclcpp::Time start = now();
-//     std::vector<geometry_msgs::msg::Pose> waypoints;
-//     geometry_msgs::msg::Pose starting_pose = floor_robot_.getCurrentPose().pose;
-
-//     // First try waiting a short time without moving
-//     rclcpp::sleep_for(std::chrono::milliseconds(200));
-//     if (floor_gripper_state_.attached)
-//     {
-//         RCLCPP_INFO(get_logger(), "Part attached immediately");
-//         return;
-//     }
-
-//     int micro_adjustment_count = 0;
-//     const int max_micro_adjustments = 5;
-//     double adjustment_size = 0.001; // 1mm initial adjustment
-
-//     while (!floor_gripper_state_.attached)
-//     {
-//         waypoints.clear();
-//         waypoints.push_back(starting_pose);
-//         FloorRobotMoveCartesian(waypoints, 0.01, 0.01, false);
-
-//         // Give a short time for attachment to register
-//         rclcpp::sleep_for(std::chrono::milliseconds(200));
-
-//         // Increase adjustment size for next attempt
-//         adjustment_size += 0.0005; // Gradually increase to 0.0015, 0.002, etc.
-
-//         if (now() - start > rclcpp::Duration::from_seconds(timeout))
-//         {
-//             RCLCPP_ERROR(get_logger(), "Unable to pick up object: timeout");
-//             return;
-//         }
-//     }
-
-//     if (floor_gripper_state_.attached)
-//     {
-//         RCLCPP_INFO(get_logger(), "Successfully attached after %d micro-adjustments",
-//                     micro_adjustment_count);
-//     }
-//     else
-//     {
-//         RCLCPP_ERROR(get_logger(), "Failed to attach after %d micro-adjustments",
-//                      micro_adjustment_count);
-//     }
-// }
-
+/**
+ * @brief Moves the floor robot to its home position
+ *
+ * Sets the floor robot to the predefined "home" joint state and
+ * executes the motion.
+ */
 void RobotController::FloorRobotSendHome()
 {
     // Move floor robot to home joint state
@@ -1080,6 +1341,15 @@ void RobotController::FloorRobotSendHome()
     FloorRobotMovetoTarget();
 }
 
+/**
+ * @brief Controls the floor robot gripper state
+ *
+ * Enables or disables the vacuum gripper on the floor robot,
+ * checking current state to avoid redundant calls.
+ *
+ * @param enable true to enable the gripper, false to disable
+ * @return true if state changed successfully, false otherwise
+ */
 bool RobotController::FloorRobotSetGripperState(bool enable)
 {
     if (floor_gripper_state_.enabled == enable)
@@ -1108,6 +1378,16 @@ bool RobotController::FloorRobotSetGripperState(bool enable)
     return true;
 }
 
+/**
+ * @brief Changes the gripper type on the floor robot
+ *
+ * Moves the robot to the specified tool changer station and
+ * changes the gripper to either a tray or part gripper.
+ *
+ * @param station Tool changer station to use ("kts1" or "kts2")
+ * @param gripper_type Type of gripper to change to ("trays" or "parts")
+ * @return true if gripper changed successfully, false otherwise
+ */
 bool RobotController::FloorRobotChangeGripper(std::string station, std::string gripper_type)
 {
     // Move gripper into tool changer
@@ -1154,7 +1434,25 @@ bool RobotController::FloorRobotChangeGripper(std::string station, std::string g
 
     return true;
 }
-/////////////////////////////
+
+/**
+ * @brief Picks up a kit tray and places it on the specified AGV
+ *
+ * Implements a comprehensive workflow for tray pickup and placement:
+ * 1. Locates the tray on either KTS1 or KTS2 stations
+ * 2. Moves the floor robot to the appropriate station
+ * 3. Ensures the correct gripper is attached
+ * 4. Uses a multi-stage approach for reliable tray pickup
+ * 5. Transports the tray to the AGV
+ * 6. Performs precise placement with collision avoidance
+ * 7. Locks the tray to the AGV
+ *
+ * Includes multiple error recovery mechanisms throughout the process.
+ *
+ * @param tray_id ID of the kit tray to pick up
+ * @param agv_num AGV number (1-4) where the tray should be placed
+ * @return true if the operation was successful, false otherwise
+ */
 bool RobotController::FloorRobotPickandPlaceTray(int tray_id, int agv_num)
 {
     RCLCPP_INFO_STREAM(get_logger(), BOLD + ORANGE << "Attempting to pick up kit tray " << tray_id << " and place on AGV " << agv_num << RESET);
@@ -1584,7 +1882,16 @@ bool RobotController::FloorRobotPickandPlaceTray(int tray_id, int agv_num)
     return true;
 }
 
-//////////////////////////////////////////////////
+/**
+ * @brief Picks up a part from a bin
+ *
+ * Locates a part of the specified type and color in the bins,
+ * ensures the correct gripper is attached, and picks up the part.
+ * Updates the planning scene to include the attached part.
+ *
+ * @param part_to_pick Part type and color to pick up
+ * @return true if part was successfully picked, false otherwise
+ */
 bool RobotController::FloorRobotPickBinPart(ariac_msgs::msg::Part part_to_pick)
 {
     RCLCPP_INFO_STREAM(get_logger(), "Attempting to pick a " << part_colors_[part_to_pick.color]
@@ -1698,6 +2005,16 @@ bool RobotController::FloorRobotPickBinPart(ariac_msgs::msg::Part part_to_pick)
     return true;
 }
 
+/**
+ * @brief Picks up a part from the conveyor belt
+ *
+ * Monitors the conveyor belt for a part of the specified type and color,
+ * calculates interception timing, and picks up the part as it passes by.
+ * Uses a multi-stage approach with timing calculations for reliable pickup.
+ *
+ * @param part_to_pick Part type and color to pick up
+ * @return true if part was successfully picked, false otherwise
+ */
 bool RobotController::FloorRobotPickConveyorPart(ariac_msgs::msg::Part part_to_pick)
 {
     // Validate part availability with proper locking
@@ -2030,6 +2347,17 @@ bool RobotController::FloorRobotPickConveyorPart(ariac_msgs::msg::Part part_to_p
     return true;
 }
 
+/**
+ * @brief Places a part on a kit tray in the specified quadrant
+ *
+ * Places the currently held part onto the kit tray on the specified AGV
+ * in the given quadrant. Verifies proper part attachment and AGV location
+ * before attempting placement.
+ *
+ * @param agv_num AGV number (1-4) where the part should be placed
+ * @param quadrant Quadrant number (1-4) on the tray to place the part
+ * @return true if part was successfully placed, false otherwise
+ */
 bool RobotController::FloorRobotPlacePartOnKitTray(int agv_num, int quadrant)
 {
     if (!floor_gripper_state_.attached)
@@ -2166,6 +2494,12 @@ bool RobotController::FloorRobotPlacePartOnKitTray(int agv_num, int quadrant)
     return true;
 }
 
+/**
+ * @brief Moves the ceiling robot to its home position
+ *
+ * Sets the ceiling robot to the predefined "home" joint state and
+ * executes the motion.
+ */
 void RobotController::CeilingRobotSendHome()
 {
     // Move ceiling robot to home joint state
@@ -2174,6 +2508,15 @@ void RobotController::CeilingRobotSendHome()
     CeilingRobotMovetoTarget();
 }
 
+/**
+ * @brief Controls the ceiling robot gripper state
+ *
+ * Enables or disables the vacuum gripper on the ceiling robot,
+ * checking current state to avoid redundant calls.
+ *
+ * @param enable true to enable the gripper, false to disable
+ * @return true if state changed successfully, false otherwise
+ */
 bool RobotController::CeilingRobotSetGripperState(bool enable)
 {
     if (ceiling_gripper_state_.enabled == enable)
@@ -2202,6 +2545,14 @@ bool RobotController::CeilingRobotSetGripperState(bool enable)
     return true;
 }
 
+/**
+ * @brief Waits for a part to be attached to the ceiling robot gripper
+ *
+ * Performs small downward movements until a part is attached to the gripper
+ * or the timeout is reached.
+ *
+ * @param timeout Maximum time in seconds to wait for attachment
+ */
 void RobotController::CeilingRobotWaitForAttach(double timeout)
 {
     // Wait for part to be attached
@@ -2229,6 +2580,16 @@ void RobotController::CeilingRobotWaitForAttach(double timeout)
     }
 }
 
+/**
+ * @brief Waits for a part to be assembled at an assembly station
+ *
+ * Moves the robot in the assembly direction until the part is
+ * detected as assembled or the timeout is reached.
+ *
+ * @param station Assembly station number (1-4)
+ * @param part Assembly part information
+ * @return true if part was successfully assembled, false otherwise
+ */
 bool RobotController::CeilingRobotWaitForAssemble(int station, ariac_msgs::msg::AssemblyPart part)
 {
     // Wait for part to be attached
@@ -2298,6 +2659,14 @@ bool RobotController::CeilingRobotWaitForAssemble(int station, ariac_msgs::msg::
     return true;
 }
 
+/**
+ * @brief Plans and executes a motion to the current target for the ceiling robot
+ *
+ * Plans a path to the currently set target pose or joint state
+ * and executes the motion if planning succeeds.
+ *
+ * @return true if motion executed successfully, false otherwise
+ */
 bool RobotController::CeilingRobotMovetoTarget()
 {
     moveit::planning_interface::MoveGroupInterface::Plan plan;
@@ -2314,6 +2683,17 @@ bool RobotController::CeilingRobotMovetoTarget()
     }
 }
 
+/**
+ * @brief Plans and executes a Cartesian path for the ceiling robot
+ *
+ * Computes and executes a Cartesian path through the specified waypoints.
+ *
+ * @param waypoints List of pose waypoints defining the path
+ * @param vsf Velocity scaling factor (0.0-1.0)
+ * @param asf Acceleration scaling factor (0.0-1.0)
+ * @param avoid_collisions Whether to check for collisions during planning
+ * @return true if path executed successfully, false otherwise
+ */
 bool RobotController::CeilingRobotMoveCartesian(
     std::vector<geometry_msgs::msg::Pose> waypoints, double vsf, double asf, bool avoid_collisions)
 {
@@ -2336,6 +2716,18 @@ bool RobotController::CeilingRobotMoveCartesian(
     return static_cast<bool>(ceiling_robot_.execute(trajectory));
 }
 
+/**
+ * @brief Plans a Cartesian path for the ceiling robot
+ *
+ * Computes a Cartesian path through the specified waypoints without executing it.
+ * Returns both success status and the computed trajectory.
+ *
+ * @param waypoints List of pose waypoints defining the path
+ * @param vsf Velocity scaling factor (0.0-1.0)
+ * @param asf Acceleration scaling factor (0.0-1.0)
+ * @param avoid_collisions Whether to check for collisions during planning
+ * @return Pair of (success flag, trajectory)
+ */
 std::pair<bool, moveit_msgs::msg::RobotTrajectory> RobotController::CeilingRobotPlanCartesian(
     std::vector<geometry_msgs::msg::Pose> waypoints, double vsf, double asf, bool avoid_collisions)
 {
@@ -2358,6 +2750,15 @@ std::pair<bool, moveit_msgs::msg::RobotTrajectory> RobotController::CeilingRobot
     return std::make_pair(true, trajectory);
 }
 
+/**
+ * @brief Moves the ceiling robot to an assembly station
+ *
+ * Sets the ceiling robot to the joint state for the specified
+ * assembly station and executes the motion.
+ *
+ * @param station Assembly station number (1-4)
+ * @return true if motion executed successfully, false otherwise
+ */
 bool RobotController::CeilingRobotMoveToAssemblyStation(int station)
 {
     RCLCPP_INFO_STREAM(get_logger(), "Moving ceiling robot to assembly station " << station);
@@ -2383,6 +2784,16 @@ bool RobotController::CeilingRobotMoveToAssemblyStation(int station)
     return CeilingRobotMovetoTarget();
 }
 
+/**
+ * @brief Picks up a part from an AGV with the ceiling robot
+ *
+ * Calculates appropriate approach and grasp positions based on the
+ * part type, moves to the part, and picks it up. Updates the planning
+ * scene to include the attached part.
+ *
+ * @param part Part pose information
+ * @return true if part was successfully picked, false otherwise
+ */
 bool RobotController::CeilingRobotPickAGVPart(ariac_msgs::msg::PartPose part)
 {
     RCLCPP_INFO_STREAM(get_logger(), "Determining waypoints to pick " << part_types_[part.part.type]);
@@ -2428,6 +2839,15 @@ bool RobotController::CeilingRobotPickAGVPart(ariac_msgs::msg::PartPose part)
     return true;
 }
 
+/**
+ * @brief Processes all pending orders
+ *
+ * Main order processing loop that processes each order in the queue.
+ * For each order, determines the appropriate task type and dispatches
+ * to the corresponding task handler. Submits completed orders.
+ *
+ * @return true if all orders were completed successfully, false otherwise
+ */
 bool RobotController::CompleteOrders()
 {
     // Wait for first order to be published
@@ -2486,6 +2906,19 @@ bool RobotController::CompleteOrders()
     return success;
 }
 
+/**
+ * @brief Completes a kitting task
+ *
+ * Executes a complete kitting workflow:
+ * 1. Moves the AGV to the kitting station if needed
+ * 2. Places a tray on the AGV
+ * 3. Picks and places each part specified in the kit
+ * 4. Performs quality checking
+ * 5. Moves the AGV to the destination
+ *
+ * @param task Kitting task specification
+ * @return true if the task was completed successfully, false otherwise
+ */
 bool RobotController::CompleteKittingTask(ariac_msgs::msg::KittingTask task)
 {
     RCLCPP_INFO(get_logger(), "Starting kitting task");
@@ -2677,6 +3110,14 @@ bool RobotController::CompleteKittingTask(ariac_msgs::msg::KittingTask task)
     return true;
 }
 
+/**
+ * @brief Starts the ARIAC competition
+ *
+ * Calls the start_competition service to begin the competition
+ * if it is in the READY state.
+ *
+ * @return true if competition started successfully, false otherwise
+ */
 bool RobotController::StartCompetition()
 {
     // Don't wait in a blocking loop - just check if ready
@@ -2713,6 +3154,13 @@ bool RobotController::StartCompetition()
     return future.get()->success;
 }
 
+/**
+ * @brief Ends the ARIAC competition
+ *
+ * Calls the end_competition service to terminate the competition.
+ *
+ * @return true if competition ended successfully, false otherwise
+ */
 bool RobotController::EndCompetition()
 {
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr client;
@@ -2731,6 +3179,15 @@ bool RobotController::EndCompetition()
     return future.get()->success;
 }
 
+/**
+ * @brief Submits a completed order
+ *
+ * Calls the submit_order service to indicate that an order
+ * has been completed.
+ *
+ * @param order_id ID of the order to submit
+ * @return true if order was submitted successfully, false otherwise
+ */
 bool RobotController::SubmitOrder(std::string order_id)
 {
     RCLCPP_INFO_STREAM(get_logger(), "Submitting order " << order_id);
@@ -2746,6 +3203,15 @@ bool RobotController::SubmitOrder(std::string order_id)
     return future.get()->success;
 }
 
+/**
+ * @brief Locks a tray to an AGV
+ *
+ * Calls the appropriate AGV's lock_tray service to secure
+ * a tray to the AGV for transport.
+ *
+ * @param agv_num AGV number (1-4) to lock the tray on
+ * @return true if tray was locked successfully, false otherwise
+ */
 bool RobotController::LockAGVTray(int agv_num)
 {
     RCLCPP_INFO_STREAM(get_logger(), "Locking Tray to AGV" << agv_num);
@@ -2764,6 +3230,15 @@ bool RobotController::LockAGVTray(int agv_num)
     return future.get()->success;
 }
 
+/**
+ * @brief Unlocks a tray from an AGV
+ *
+ * Calls the appropriate AGV's unlock_tray service to release
+ * a tray from the AGV.
+ *
+ * @param agv_num AGV number (1-4) to unlock the tray from
+ * @return true if tray was unlocked successfully, false otherwise
+ */
 bool RobotController::UnlockAGVTray(int agv_num)
 {
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr client;
@@ -2780,6 +3255,17 @@ bool RobotController::UnlockAGVTray(int agv_num)
     return future.get()->success;
 }
 
+/**
+ * @brief Moves an AGV to a specified destination
+ *
+ * Calls the move_agv service to send an AGV to a specified location
+ * (kitting, assembly_front, assembly_back, or warehouse), with timeout
+ * monitoring for completion.
+ *
+ * @param agv_num AGV number (1-4) to move
+ * @param destination Destination location code
+ * @return true if AGV reached destination successfully, false otherwise
+ */
 bool RobotController::MoveAGV(int agv_num, int destination)
 {
     RCLCPP_INFO_STREAM(get_logger(), "Moving AGV" << agv_num << " to " << agv_destination_[destination]);
@@ -2810,6 +3296,16 @@ bool RobotController::MoveAGV(int agv_num, int destination)
     return false;
 }
 
+/**
+ * @brief Main entry point
+ *
+ * Initializes ROS, creates the RobotController node, and runs
+ * the multi-threaded executor to process callbacks.
+ *
+ * @param argc Number of command line arguments
+ * @param argv Command line arguments
+ * @return Exit code (0 for normal exit)
+ */
 int main(int argc, char *argv[])
 {
     rclcpp::init(argc, argv);
