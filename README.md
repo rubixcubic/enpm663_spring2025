@@ -31,6 +31,9 @@ ros2 launch moveit_demo controller_demo.launch.py program:=python rviz:=true ope
 ros2 launch moveit_demo controller_demo.launch.py program:=cpp rviz:=true operation_mode:=pick_place_tray
 ```
 
+## Pipeline ```minimal_demo.py```
+
+![Alt text](figures/minimal_demo_py.png)
 
 
 #   MoveIt: A Comprehensive Overview
@@ -74,6 +77,18 @@ moveit::planning_interface::MoveGroupInterface floor_robot_;
 moveit::planning_interface::MoveGroupInterface ceiling_robot_;
 moveit::planning_interface::PlanningSceneInterface planning_scene_;
 trajectory_processing::TimeOptimalTrajectoryGeneration totg_;
+```
+
+```floor_robot``` and ```ceiling_robot``` objects are initialized in the constructor:
+
+```cpp
+RobotController::RobotController()
+    : Node("moveit_demo"),
+      floor_robot_(std::shared_ptr<rclcpp::Node>(std::move(this)), "floor_robot"),
+      ceiling_robot_(std::shared_ptr<rclcpp::Node>(std::move(this)), "ceiling_robot"),
+      planning_scene_()
+{
+}
 ```
 
 ## Planning Scene Management
