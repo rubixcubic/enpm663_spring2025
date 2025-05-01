@@ -33,7 +33,7 @@ ros2 launch moveit_demo controller_demo.launch.py program:=cpp rviz:=true operat
 
 ## Pipeline ```minimal_demo.py```
 
-![Alt text](figures/minimal_demo_py.png)
+![Alt text](./lecture9/moveit_demo/figures/minimal_demo_py.png)
 
 
 #   MoveIt: A Comprehensive Overview
